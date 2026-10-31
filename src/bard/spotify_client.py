@@ -37,10 +37,53 @@ def generate_pkce_pair() -> Tuple[str, str]:
 
 
 class SpotifyClient:
-    """Handles Spotify API calls and token management."""
+    """Handles Spotify API calls, token management, caching, and rate limit protection."""
 
     def __init__(self, config: BardConfig):
         self.config = config
+        self._playlists_cache: Optional[List[Dict[str, Any]]] = None
+        self._tracks_cache: Dict[str, List[Dict[str, Any]]] = {}
+        self._last_playback_data: Optional[Dict[str, Any]] = None
+        self.rate_limited_until: float = 0.0
+        self.rate_limit_reason: str = ""
+
+    def is_rate_limited(self) -> bool:
+        """Check if client is currently in rate-limit cooldown."""
+        import time
+        return time.time() < self.rate_limited_until
+
+    def is_quota_exceeded(self) -> bool:
+        """Check if rate limit is specifically due to 24-hour developer app QUOTA_EXCEEDED."""
+        return self.is_rate_limited() and self.rate_limit_reason == "QUOTA_EXCEEDED"
+
+    def get_cooldown_seconds(self) -> int:
+        """Return remaining rate-limit cooldown seconds."""
+        import time
+        return max(0, int(self.rate_limited_until - time.time()))
+
+    def get_cooldown_message(self) -> str:
+        """Return human-friendly rate-limit or quota status message."""
+        secs = self.get_cooldown_seconds()
+        if secs <= 0:
+            return ""
+        hours, rem = divmod(secs, 3600)
+        mins, s = divmod(rem, 60)
+        time_str = f"{hours}h {mins}m" if hours > 0 else f"{mins}m {s}s"
+        if self.is_quota_exceeded():
+            return f"Spotify daily developer quota exceeded (QUOTA_EXCEEDED). Cooldown resets in {time_str}."
+        return f"Too many requests to Spotify (rate limited). Cooldown: {time_str}."
+
+    def _handle_response(self, resp: requests.Response) -> None:
+        """Process response status and update rate limit flags on 429."""
+        if resp.status_code == 429:
+            import time
+            retry_after = int(resp.headers.get("Retry-After", 60))
+            self.rate_limited_until = time.time() + retry_after
+            try:
+                err = resp.json().get("error", {})
+                self.rate_limit_reason = err.get("reason", "RATE_LIMIT")
+            except Exception:
+                self.rate_limit_reason = "RATE_LIMIT"
 
     def get_auth_url(self, challenge: str, state: str) -> str:
         """Construct OAuth authorization URL."""
@@ -105,8 +148,11 @@ class SpotifyClient:
 
     def get_devices(self) -> List[Dict[str, Any]]:
         """Return available Spotify Connect devices."""
+        if self.is_rate_limited():
+            return []
         try:
             resp = requests.get(f"{SPOTIFY_API_BASE}/me/player/devices", headers=self._headers(), timeout=5)
+            self._handle_response(resp)
             if resp.status_code == 200:
                 return resp.json().get("devices", [])
         except Exception:
@@ -115,8 +161,13 @@ class SpotifyClient:
 
     def get_playback(self) -> Optional[Dict[str, Any]]:
         """Fetch current playback state."""
+        if self.is_rate_limited():
+            return self._last_playback_data
         try:
             resp = requests.get(f"{SPOTIFY_API_BASE}/me/player", headers=self._headers(), timeout=5)
+            self._handle_response(resp)
+            if resp.status_code == 429:
+                return self._last_playback_data
             if resp.status_code == 204 or resp.status_code != 200:
                 return None
             data = resp.json()
@@ -128,7 +179,7 @@ class SpotifyClient:
             images = item.get("album", {}).get("images", [])
             art_url = images[0]["url"] if images else ""
 
-            return {
+            result = {
                 "title": item.get("name", "Unknown Track"),
                 "artist": artists,
                 "album": item.get("album", {}).get("name", "Unknown Album"),
@@ -141,13 +192,20 @@ class SpotifyClient:
                 "album_art_url": art_url,
                 "uri": item.get("uri", ""),
             }
+            self._last_playback_data = result
+            return result
         except Exception:
-            return None
+            return self._last_playback_data
 
-    def get_playlists(self) -> List[Dict[str, Any]]:
-        """Retrieve user's playlists."""
+    def get_playlists(self, force_refresh: bool = False) -> List[Dict[str, Any]]:
+        """Retrieve user's playlists with local in-memory caching."""
+        if not force_refresh and self._playlists_cache is not None:
+            return self._playlists_cache
+        if self.is_rate_limited():
+            return self._playlists_cache or []
         try:
             resp = requests.get(f"{SPOTIFY_API_BASE}/me/playlists?limit=50", headers=self._headers(), timeout=5)
+            self._handle_response(resp)
             if resp.status_code == 200:
                 items = resp.json().get("items", [])
                 results = []
@@ -162,20 +220,27 @@ class SpotifyClient:
                         "tracks_count": count,
                         "uri": p.get("uri"),
                     })
+                self._playlists_cache = results
                 return results
         except Exception:
             pass
-        return []
+        return self._playlists_cache or []
 
-    def get_playlist_tracks(self, playlist_id: str) -> List[Dict[str, Any]]:
-        """Retrieve tracks inside a specific playlist."""
+    def get_playlist_tracks(self, playlist_id: str, force_refresh: bool = False) -> List[Dict[str, Any]]:
+        """Retrieve tracks inside a specific playlist with per-playlist caching."""
+        if not force_refresh and playlist_id in self._tracks_cache:
+            return self._tracks_cache[playlist_id]
+        if self.is_rate_limited():
+            return self._tracks_cache.get(playlist_id, [])
         try:
             # Query /items endpoint (new Spotify API standard) with fallback to /tracks
             url = f"{SPOTIFY_API_BASE}/playlists/{playlist_id}/items?limit=100"
             resp = requests.get(url, headers=self._headers(), timeout=5)
-            if resp.status_code != 200:
+            self._handle_response(resp)
+            if resp.status_code != 200 and not self.is_rate_limited():
                 url = f"{SPOTIFY_API_BASE}/playlists/{playlist_id}/tracks?limit=100"
                 resp = requests.get(url, headers=self._headers(), timeout=5)
+                self._handle_response(resp)
 
             if resp.status_code == 200:
                 items = resp.json().get("items", [])
@@ -194,13 +259,16 @@ class SpotifyClient:
                         "duration_str": f"{mins:02d}:{secs:02d}",
                         "uri": t.get("uri", ""),
                     })
+                self._tracks_cache[playlist_id] = tracks
                 return tracks
         except Exception:
             pass
-        return []
+        return self._tracks_cache.get(playlist_id, [])
 
     def play(self, context_uri: Optional[str] = None, uris: Optional[List[str]] = None, device_id: Optional[str] = None) -> Tuple[bool, str]:
         """Resume playback or play a playlist/track. Returns (success, error_message)."""
+        if self.is_rate_limited():
+            return False, self.get_cooldown_message()
         params = {"device_id": device_id} if device_id else {}
         body: Dict[str, Any] = {}
         if context_uri:
@@ -209,8 +277,11 @@ class SpotifyClient:
             body["uris"] = uris
         try:
             resp = requests.put(f"{SPOTIFY_API_BASE}/me/player/play", params=params, json=body or None, headers=self._headers(), timeout=5)
+            self._handle_response(resp)
             if resp.status_code in (200, 204):
                 return True, ""
+            if resp.status_code == 429:
+                return False, self.get_cooldown_message()
             err_msg = ""
             try:
                 err_msg = resp.json().get("error", {}).get("message", "")
@@ -222,33 +293,63 @@ class SpotifyClient:
 
     def pause(self, device_id: Optional[str] = None) -> bool:
         """Pause playback."""
+        if self.is_rate_limited():
+            return False
         params = {"device_id": device_id} if device_id else {}
-        resp = requests.put(f"{SPOTIFY_API_BASE}/me/player/pause", params=params, headers=self._headers(), timeout=5)
-        return resp.status_code in (200, 204)
+        try:
+            resp = requests.put(f"{SPOTIFY_API_BASE}/me/player/pause", params=params, headers=self._headers(), timeout=5)
+            self._handle_response(resp)
+            return resp.status_code in (200, 204)
+        except Exception:
+            return False
 
     def next_track(self, device_id: Optional[str] = None) -> bool:
         """Skip to next track."""
+        if self.is_rate_limited():
+            return False
         params = {"device_id": device_id} if device_id else {}
-        resp = requests.post(f"{SPOTIFY_API_BASE}/me/player/next", params=params, headers=self._headers(), timeout=5)
-        return resp.status_code in (200, 204)
+        try:
+            resp = requests.post(f"{SPOTIFY_API_BASE}/me/player/next", params=params, headers=self._headers(), timeout=5)
+            self._handle_response(resp)
+            return resp.status_code in (200, 204)
+        except Exception:
+            return False
 
     def previous_track(self, device_id: Optional[str] = None) -> bool:
         """Skip to previous track."""
+        if self.is_rate_limited():
+            return False
         params = {"device_id": device_id} if device_id else {}
-        resp = requests.post(f"{SPOTIFY_API_BASE}/me/player/previous", params=params, headers=self._headers(), timeout=5)
-        return resp.status_code in (200, 204)
+        try:
+            resp = requests.post(f"{SPOTIFY_API_BASE}/me/player/previous", params=params, headers=self._headers(), timeout=5)
+            self._handle_response(resp)
+            return resp.status_code in (200, 204)
+        except Exception:
+            return False
 
     def set_volume(self, volume_percent: int, device_id: Optional[str] = None) -> bool:
         """Set volume percentage."""
+        if self.is_rate_limited():
+            return False
         vol = max(0, min(100, volume_percent))
         params = {"volume_percent": vol}
         if device_id:
             params["device_id"] = device_id
-        resp = requests.put(f"{SPOTIFY_API_BASE}/me/player/volume", params=params, headers=self._headers(), timeout=5)
-        return resp.status_code in (200, 204)
+        try:
+            resp = requests.put(f"{SPOTIFY_API_BASE}/me/player/volume", params=params, headers=self._headers(), timeout=5)
+            self._handle_response(resp)
+            return resp.status_code in (200, 204)
+        except Exception:
+            return False
 
     def transfer_playback(self, device_id: str, play: bool = True) -> bool:
         """Transfer active playback to designated device ID."""
+        if self.is_rate_limited():
+            return False
         body = {"device_ids": [device_id], "play": play}
-        resp = requests.put(f"{SPOTIFY_API_BASE}/me/player", json=body, headers=self._headers(), timeout=5)
-        return resp.status_code in (200, 204)
+        try:
+            resp = requests.put(f"{SPOTIFY_API_BASE}/me/player", json=body, headers=self._headers(), timeout=5)
+            self._handle_response(resp)
+            return resp.status_code in (200, 204)
+        except Exception:
+            return False

@@ -98,3 +98,67 @@ def test_get_playlist_tracks_items_schema(tmp_path):
         assert tracks[0]["name"] == "Dance Yrself Clean"
         assert tracks[0]["artist"] == "LCD Soundsystem"
         assert tracks[0]["duration_str"] == "08:56"
+
+
+def test_playlists_and_tracks_caching(tmp_path):
+    cfg = BardConfig(config_path=tmp_path / "config.json")
+    cfg.access_token = "valid_token"
+    cfg.token_expiry = 9999999999
+    client = SpotifyClient(cfg)
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "items": [
+            {"id": "p1", "name": "Vibes", "tracks": {"total": 5}, "uri": "spotify:playlist:p1"}
+        ]
+    }
+    with patch("requests.get", return_value=mock_resp) as mock_get:
+        p1 = client.get_playlists()
+        p2 = client.get_playlists()
+        assert p1 == p2
+        # Should only have called requests.get once due to caching
+        assert mock_get.call_count == 1
+
+    mock_track_resp = MagicMock()
+    mock_track_resp.status_code = 200
+    mock_track_resp.json.return_value = {
+        "items": [
+            {"track": {"id": "t1", "name": "Song 1", "artists": [{"name": "Artist 1"}], "duration_ms": 120000, "uri": "spotify:track:t1"}}
+        ]
+    }
+    with patch("requests.get", return_value=mock_track_resp) as mock_get:
+        t1 = client.get_playlist_tracks("p1")
+        t2 = client.get_playlist_tracks("p1")
+        assert t1 == t2
+        assert mock_get.call_count == 1
+
+
+def test_rate_limit_and_quota_handling(tmp_path):
+    import time
+    cfg = BardConfig(config_path=tmp_path / "config.json")
+    cfg.access_token = "valid_token"
+    cfg.token_expiry = 9999999999
+    client = SpotifyClient(cfg)
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 429
+    mock_resp.headers = {"Retry-After": "3600"}
+    mock_resp.json.return_value = {
+        "error": {"status": 429, "message": "Too many requests", "reason": "QUOTA_EXCEEDED"}
+    }
+
+    with patch("requests.put", return_value=mock_resp):
+        success, msg = client.play()
+        assert success is False
+        assert "quota" in msg.lower() or "too many requests" in msg.lower()
+        assert client.is_rate_limited() is True
+        assert client.is_quota_exceeded() is True
+        assert client.get_cooldown_seconds() > 3500
+
+    # While rate limited, calls should not trigger network requests
+    with patch("requests.put") as mock_put:
+        success, msg = client.play()
+        assert success is False
+        assert mock_put.call_count == 0
+

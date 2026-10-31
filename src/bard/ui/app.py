@@ -56,7 +56,7 @@ class BardApp(App):
     def on_mount(self) -> None:
         """Start timers and fetch initial state."""
         self._tick_timer = self.set_interval(1.0, self.on_progress_tick)
-        self._sync_timer = self.set_interval(3.0, self.sync_playback_state)
+        self._sync_timer = self.set_interval(8.0, self.sync_playback_state)
         self.sync_playback_state()
         self.locate_bard_device()
 
@@ -67,6 +67,8 @@ class BardApp(App):
     @work(thread=True)
     def locate_bard_device(self) -> None:
         """Discover Bard or local PC Spotify Connect device ID and transfer playback to it."""
+        if self.client.is_rate_limited():
+            return
         devices = self.client.get_devices()
         local_target = None
 
@@ -98,6 +100,8 @@ class BardApp(App):
     @work(thread=True)
     def sync_playback_state(self) -> None:
         """Background sync of playback state from Spotify Web API."""
+        if self.client.is_rate_limited():
+            return
         state = self.client.get_playback()
         self.call_from_thread(self._apply_playback_state, state)
 
@@ -125,18 +129,37 @@ class BardApp(App):
     @work(thread=True)
     def action_toggle_playback(self) -> None:
         """Play or pause playback."""
+        if self.client.is_rate_limited():
+            self.call_from_thread(
+                self.notify,
+                self.client.get_cooldown_message(),
+                title="Spotify",
+                severity="warning",
+                timeout=6,
+            )
+            return
+
         state = self.stage_widget.playback_data
         if state and state.get("is_playing"):
             self.client.pause(device_id=self.bard_device_id)
         else:
             success, err_msg = self.client.play(device_id=self.bard_device_id)
             if not success:
+                if self.client.is_rate_limited():
+                    self.call_from_thread(
+                        self.notify,
+                        self.client.get_cooldown_message(),
+                        title="Spotify",
+                        severity="warning",
+                        timeout=6,
+                    )
+                    return
                 self.locate_bard_device()
                 success, err_msg = self.client.play(device_id=self.bard_device_id)
                 if not success:
                     self.call_from_thread(
                         self.notify,
-                        "Could not resume playback. Please pick a playlist from [Tab].",
+                        err_msg or "Could not resume playback. Please pick a playlist from [Tab].",
                         title="Spotify",
                         severity="warning",
                         timeout=5,
