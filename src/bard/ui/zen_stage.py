@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 from rich.text import Text
 from textual.app import ComposeResult
-from textual.containers import Center, Horizontal, Vertical
+from textual.containers import Center, Vertical
 from textual.widget import Widget
 from textual.widgets import Static
 
@@ -55,19 +55,24 @@ class ZenStage(Widget):
     }
 
     #stage-container {
-        width: 84;
+        width: 86;
         height: auto;
         border: round #FF7A00;
         background: #181A24;
         padding: 1 2;
-        align: center middle;
+        align-horizontal: center;
+    }
+
+    #art-center {
+        width: 100%;
+        height: auto;
+        content-align: center middle;
+        margin-bottom: 1;
     }
 
     #art-box {
         width: auto;
         height: auto;
-        margin-bottom: 1;
-        content-align: center middle;
     }
 
     #track-title {
@@ -93,6 +98,11 @@ class ZenStage(Widget):
         margin-bottom: 1;
     }
 
+    #status-bar {
+        text-align: center;
+        margin-bottom: 1;
+    }
+
     #controls-hint {
         text-align: center;
         color: #6C7086;
@@ -110,11 +120,13 @@ class ZenStage(Widget):
     def compose(self) -> ComposeResult:
         with Center():
             with Vertical(id="stage-container"):
-                yield Static(id="art-box")
+                with Center(id="art-center"):
+                    yield Static(id="art-box")
                 yield Static(id="track-title")
                 yield Static(id="track-meta")
                 yield Static(id="progress-bar")
                 yield Static(id="transport-controls")
+                yield Static(id="status-bar")
                 yield Static(id="controls-hint")
 
     def update_playback(self, data: Optional[Dict[str, Any]]) -> None:
@@ -147,15 +159,23 @@ class ZenStage(Widget):
         meta_widget = self.query_one("#track-meta", Static)
         bar_widget = self.query_one("#progress-bar", Static)
         transport_widget = self.query_one("#transport-controls", Static)
+        status_widget = self.query_one("#status-bar", Static)
         hint_widget = self.query_one("#controls-hint", Static)
 
         if not self.playback_data:
             art_widget.update(Text.from_ansi(render_album_art("", width=32, height=12)))
             title_widget.update("[bold #FF7A00]No Music Playing[/]")
-            meta_widget.update(Text.assemble(("Press ", "#A6ADC8"), ("[Tab]", "bold #FFD166"), (" to browse your playlists", "#A6ADC8")))
+            meta_widget.update(Text.assemble(("Press ", "#A6ADC8"), ("[Tab]", "bold #FFD166"), (" to browse your library", "#A6ADC8")))
             bar_widget.update("")
-            transport_widget.update("[on #262938 #6C7086]  ⏮ Prev  [/]   [on #FF7A00 bold #FFFFFF]  ▶ Play  [/]   [on #262938 #6C7086]  ⏭ Next  [/]")
-            hint_widget.update(Text.assemble(("[Tab] Playlists", "on #262938 bold #A6ADC8"), ("   ", ""), ("[Q] Quit", "on #262938 bold #A6ADC8")))
+            transport_widget.update("[on #262938 #6C7086]  ◄ Prev [P]  [/]     [on #262938 bold #A6ADC8]   ▶ PLAY    [/]     [on #262938 #6C7086]  Next [N] ►  [/]")
+            status_widget.update("[#6C7086]Ready to stream[/]")
+            hint_widget.update(
+                Text.assemble(
+                    (" [Tab] Playlists ", "on #262938 bold #FFD166"),
+                    ("   ", ""),
+                    (" [Q] Quit ", "on #262938 bold #A6ADC8"),
+                )
+            )
             return
 
         art_widget.update(Text.from_ansi(self._cached_art_ansi))
@@ -171,22 +191,36 @@ class ZenStage(Widget):
         meta_widget.update(f"[#A6ADC8]{artist}[/] [#6C7086]• {album}[/]")
         bar_widget.update(Text.from_markup(render_flame_progress(self._current_progress_ms, duration, width=52)))
 
-        play_btn = "[on #FF7A00 bold #FFFFFF]  ⏸ Pause  [/]" if is_playing else "[on #FF7A00 bold #FFFFFF]  ▶ Play  [/]"
+        # Hero transport controls: distinct pills with generous breathing room
+        if is_playing:
+            play_btn = "[on #FF7A00 bold #FFFFFF]   ❚❚ PAUSE   [/]"
+        else:
+            play_btn = "[on #262938 bold #FFD166]   ▶ PLAY    [/]"
+
         transport_markup = (
-            f"[on #262938 #FFD166]  ⏮ Prev [P]  [/]   "
-            f"{play_btn}   "
-            f"[on #262938 #FFD166]  ⏭ Next [N]  [/]   "
-            f"[on #262938 #A6ADC8]  󰕾 {volume}% [- / +]  [/]"
+            f"[on #262938 #A6ADC8]  ◄ Prev [P]  [/]     "
+            f"{play_btn}     "
+            f"[on #262938 #A6ADC8]  Next [N] ►  [/]"
         )
         transport_widget.update(transport_markup)
 
+        # Dedicated status strip: volume & device
+        status_markup = (
+            f"[#6C7086]Volume:[/] [bold #FFD166]{volume}%[/] [#6C7086][- / +][/]     "
+            f"[#2E3244]•[/]     "
+            f"[#6C7086]Audio Output:[/] [bold #FFD166]{device_name}[/]"
+        )
+        status_widget.update(status_markup)
+
+        # Bottom navigation keycaps
         hint_widget.update(
             Text.assemble(
-                (f"Audio Output: {device_name}", "bold #FFD166"),
-                ("   •   ", "#6C7086"),
-                (" [Tab] Playlists ", "on #262938 bold #A6ADC8"),
-                ("   ", ""),
-                (" [Q] Quit ", "on #262938 bold #A6ADC8"),
+                (" [Tab] ", "on #262938 bold #FFD166"),
+                (" Playlists    ", "#6C7086"),
+                (" [Space] ", "on #262938 bold #FFD166"),
+                (" Play/Pause    ", "#6C7086"),
+                (" [Q] ", "on #262938 bold #FFD166"),
+                (" Quit", "#6C7086"),
             )
         )
 
