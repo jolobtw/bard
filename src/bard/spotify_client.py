@@ -150,16 +150,19 @@ class SpotifyClient:
             resp = requests.get(f"{SPOTIFY_API_BASE}/me/playlists?limit=50", headers=self._headers(), timeout=5)
             if resp.status_code == 200:
                 items = resp.json().get("items", [])
-                return [
-                    {
+                results = []
+                for p in items:
+                    if not p:
+                        continue
+                    tracks_info = p.get("items") if isinstance(p.get("items"), dict) else p.get("tracks")
+                    count = tracks_info.get("total", 0) if isinstance(tracks_info, dict) else 0
+                    results.append({
                         "id": p.get("id"),
-                        "name": p.get("name"),
-                        "tracks_count": p.get("tracks", {}).get("total", 0),
+                        "name": p.get("name", "Untitled"),
+                        "tracks_count": count,
                         "uri": p.get("uri"),
-                    }
-                    for p in items
-                    if p
-                ]
+                    })
+                return results
         except Exception:
             pass
         return []
@@ -167,27 +170,29 @@ class SpotifyClient:
     def get_playlist_tracks(self, playlist_id: str) -> List[Dict[str, Any]]:
         """Retrieve tracks inside a specific playlist."""
         try:
-            resp = requests.get(
-                f"{SPOTIFY_API_BASE}/playlists/{playlist_id}/tracks?limit=100",
-                headers=self._headers(),
-                timeout=5,
-            )
+            # Query /items endpoint (new Spotify API standard) with fallback to /tracks
+            url = f"{SPOTIFY_API_BASE}/playlists/{playlist_id}/items?limit=100"
+            resp = requests.get(url, headers=self._headers(), timeout=5)
+            if resp.status_code != 200:
+                url = f"{SPOTIFY_API_BASE}/playlists/{playlist_id}/tracks?limit=100"
+                resp = requests.get(url, headers=self._headers(), timeout=5)
+
             if resp.status_code == 200:
                 items = resp.json().get("items", [])
                 tracks = []
                 for item in items:
-                    t = item.get("track")
-                    if not t:
+                    t = item.get("item") or item.get("track")
+                    if not t or not isinstance(t, dict):
                         continue
                     artists = ", ".join(a.get("name", "") for a in t.get("artists", []))
                     duration_s = t.get("duration_ms", 0) // 1000
                     mins, secs = divmod(duration_s, 60)
                     tracks.append({
                         "id": t.get("id"),
-                        "name": t.get("name"),
-                        "artist": artists,
+                        "name": t.get("name", "Unknown Track"),
+                        "artist": artists or "Unknown Artist",
                         "duration_str": f"{mins:02d}:{secs:02d}",
-                        "uri": t.get("uri"),
+                        "uri": t.get("uri", ""),
                     })
                 return tracks
         except Exception:

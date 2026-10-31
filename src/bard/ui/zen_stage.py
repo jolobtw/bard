@@ -152,10 +152,10 @@ class ZenStage(Widget):
         if not self.playback_data:
             art_widget.update(Text.from_ansi(render_album_art("", width=32, height=12)))
             title_widget.update("[bold #FF7A00]No Music Playing[/]")
-            meta_widget.update("[#A6ADC8]Press [bold #FFD166]\\[Tab][/] to browse playlists[/]")
+            meta_widget.update(Text.assemble(("Press ", "#A6ADC8"), ("[Tab]", "bold #FFD166"), (" to browse your playlists", "#A6ADC8")))
             bar_widget.update("")
             transport_widget.update("[on #262938 #6C7086]  ⏮ Prev  [/]   [on #FF7A00 bold #FFFFFF]  ▶ Play  [/]   [on #262938 #6C7086]  ⏭ Next  [/]")
-            hint_widget.update("[on #262938 #A6ADC8] \\[Tab] Playlists [/]   [on #262938 #A6ADC8] \\[Q] Quit [/]")
+            hint_widget.update(Text.assemble(("[Tab] Playlists", "on #262938 bold #A6ADC8"), ("   ", ""), ("[Q] Quit", "on #262938 bold #A6ADC8")))
             return
 
         art_widget.update(Text.from_ansi(self._cached_art_ansi))
@@ -181,9 +181,13 @@ class ZenStage(Widget):
         transport_widget.update(transport_markup)
 
         hint_widget.update(
-            f"[#6C7086]󰓇 Audio Output: [bold #FFD166]{device_name}[/]   •   "
-            f"[on #262938 #A6ADC8] \\[Tab] Playlists [/]   "
-            f"[on #262938 #A6ADC8] \\[Q] Quit [/]"
+            Text.assemble(
+                (f"Audio Output: {device_name}", "bold #FFD166"),
+                ("   •   ", "#6C7086"),
+                (" [Tab] Playlists ", "on #262938 bold #A6ADC8"),
+                ("   ", ""),
+                (" [Q] Quit ", "on #262938 bold #A6ADC8"),
+            )
         )
 
     def on_mount(self) -> None:

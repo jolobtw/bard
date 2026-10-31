@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional
+from rich.text import Text
+from textual import events
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widget import Widget
@@ -18,7 +20,9 @@ class CurtainDrawer(Widget):
     DEFAULT_CSS = """
     CurtainDrawer {
         dock: left;
-        width: 62;
+        width: 88%;
+        min-width: 86;
+        max-width: 140;
         height: 100%;
         background: #181A24;
         border-right: heavy #FF7A00;
@@ -46,9 +50,19 @@ class CurtainDrawer(Widget):
     }
 
     #playlist-column {
-        width: 1fr;
+        width: 42%;
+        min-width: 36;
+        max-width: 50;
         height: 100%;
         border-right: solid #2E3244;
+    }
+
+    #playlist-header {
+        height: 2;
+        width: 100%;
+        border-bottom: solid #2E3244;
+        padding: 0 1;
+        content-align: left middle;
     }
 
     #track-column {
@@ -56,10 +70,20 @@ class CurtainDrawer(Widget):
         height: 100%;
     }
 
+    #track-header {
+        height: 2;
+        width: 100%;
+        border-bottom: solid #2E3244;
+        padding: 0 1;
+        content-align: left middle;
+    }
+
     OptionList {
         background: #181A24;
+        color: #A6ADC8;
         border: none;
         scrollbar-gutter: stable;
+        padding: 0;
     }
 
     OptionList:focus {
@@ -76,7 +100,7 @@ class CurtainDrawer(Widget):
         height: 2;
         width: 100%;
         border-top: solid #2E3244;
-        color: #6C7086;
+        color: #A6ADC8;
         content-align: center middle;
     }
     """
@@ -87,16 +111,20 @@ class CurtainDrawer(Widget):
         self.on_play = on_play
         self.playlists: List[Dict[str, Any]] = []
         self.tracks: List[Dict[str, Any]] = []
-        self._active_column = "playlists"  # "playlists" or "tracks"
 
     def compose(self) -> ComposeResult:
-        yield Static("󰲸 YOUR PLAYLISTS                󰲸 TRACKS", id="drawer-title-bar")
+        yield Static("✦  ❖  YOUR MUSIC LIBRARY  ❖  ✦", id="drawer-title-bar")
         with Horizontal(id="drawer-columns"):
             with Vertical(id="playlist-column"):
+                yield Static("▸ PLAYLISTS (0)", id="playlist-header")
                 yield OptionList(id="playlist-list")
             with Vertical(id="track-column"):
+                yield Static("  TRACKS (0)", id="track-header")
                 yield OptionList(id="track-list")
-        yield Static("[←/→] Switch Column  [Enter] Play  [Esc] Close", id="drawer-footer")
+        yield Static(
+            "[#FFD166]← / →[/] Switch Column   [#FFD166]↑ / ↓[/] Navigate   [#FFD166]Enter[/] Play   [#FFD166]Esc[/] Close",
+            id="drawer-footer",
+        )
 
     def toggle(self) -> None:
         """Toggle drawer visibility."""
@@ -105,7 +133,9 @@ class CurtainDrawer(Widget):
         else:
             self.add_class("-visible")
             self.refresh_playlists()
-            self.query_one("#playlist-list", OptionList).focus()
+            plist = self.query_one("#playlist-list", OptionList)
+            plist.focus()
+            self._update_column_headers()
 
     def hide(self) -> None:
         """Close drawer."""
@@ -114,6 +144,49 @@ class CurtainDrawer(Widget):
     def is_open(self) -> bool:
         return self.has_class("-visible")
 
+    def _update_column_headers(self) -> None:
+        """Highlight active column header based on focus."""
+        try:
+            p_header = self.query_one("#playlist-header", Static)
+            t_header = self.query_one("#track-header", Static)
+            plist = self.query_one("#playlist-list", OptionList)
+            tlist = self.query_one("#track-list", OptionList)
+
+            p_count = len(self.playlists)
+            t_count = len(self.tracks)
+
+            if plist.has_focus:
+                p_header.update(f"[bold #FFD166]▸ PLAYLISTS[/]  [#6C7086]({p_count})[/]")
+                t_header.update(f"[#6C7086]  TRACKS  ({t_count})[/]")
+            elif tlist.has_focus:
+                p_header.update(f"[#6C7086]  PLAYLISTS  ({p_count})[/]")
+                t_header.update(f"[bold #FFD166]▸ TRACKS[/]  [#6C7086]({t_count})[/]")
+            else:
+                p_header.update(f"[#FF7A00]PLAYLISTS[/]  [#6C7086]({p_count})[/]")
+                t_header.update(f"[#FF7A00]TRACKS[/]  [#6C7086]({t_count})[/]")
+        except Exception:
+            pass
+
+    def on_descendant_focus(self, event: events.DescendantFocus) -> None:
+        """Keep column headers in sync when focus shifts."""
+        self._update_column_headers()
+
+    def on_key(self, event: events.Key) -> None:
+        """Handle left/right navigation between columns."""
+        if event.key in ("right", "l"):
+            tlist = self.query_one("#track-list", OptionList)
+            if self.tracks:
+                tlist.focus()
+                if tlist.highlighted is None:
+                    tlist.highlighted = 0
+                self._update_column_headers()
+                event.stop()
+        elif event.key in ("left", "h"):
+            plist = self.query_one("#playlist-list", OptionList)
+            plist.focus()
+            self._update_column_headers()
+            event.stop()
+
     def refresh_playlists(self) -> None:
         """Fetch user's playlists and populate the playlist column."""
         self.playlists = self.client.get_playlists()
@@ -121,9 +194,14 @@ class CurtainDrawer(Widget):
         plist.clear_options()
 
         for idx, p in enumerate(self.playlists):
-            name = p.get("name", "Untitled")
+            raw_name = p.get("name", "Untitled") or "Untitled"
+            clean_name = f"{raw_name[:23]}..." if len(raw_name) > 26 else raw_name
             count = p.get("tracks_count", 0)
-            plist.add_option(Option(f"󰲸 {name} ({count})", id=str(idx)))
+            # Neatly align playlist name and track count on a single row
+            label = f" {clean_name:<26}  [{count:>3}]"
+            plist.add_option(Option(Text(label, no_wrap=True), id=str(idx)))
+
+        self._update_column_headers()
 
         if self.playlists:
             plist.highlighted = 0
@@ -131,16 +209,30 @@ class CurtainDrawer(Widget):
 
     def load_tracks_for_playlist(self, index: int) -> None:
         """Load tracks for the selected playlist into the track column."""
+        tlist = self.query_one("#track-list", OptionList)
+        tlist.clear_options()
+
         if 0 <= index < len(self.playlists):
             pid = self.playlists[index].get("id")
             if pid:
                 self.tracks = self.client.get_playlist_tracks(pid)
-                tlist = self.query_one("#track-list", OptionList)
-                tlist.clear_options()
                 for idx, t in enumerate(self.tracks):
-                    name = t.get("name", "Unknown")
-                    dur = t.get("duration_str", "")
-                    tlist.add_option(Option(f"{idx+1}. {name} - {dur}", id=str(idx)))
+                    raw_title = t.get("name", "Unknown Track") or "Unknown Track"
+                    raw_artist = t.get("artist", "Unknown Artist") or "Unknown Artist"
+                    dur = t.get("duration_str", "00:00")
+
+                    clean_title = f"{raw_title[:30]}..." if len(raw_title) > 33 else raw_title
+                    clean_artist = f"{raw_artist[:20]}..." if len(raw_artist) > 23 else raw_artist
+
+                    # Single-line format: Index, Title, Artist, Duration
+                    label = f" {idx+1:>2}.  {clean_title:<33}  {clean_artist:<23}  {dur:>5}"
+                    tlist.add_option(Option(Text(label, no_wrap=True), id=str(idx)))
+            else:
+                self.tracks = []
+        else:
+            self.tracks = []
+
+        self._update_column_headers()
 
     def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
         """When playlist selection moves, preview its tracks."""
