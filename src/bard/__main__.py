@@ -104,16 +104,7 @@ def main() -> None:
                 console.print("[#FF4D4D]Authentication failed or timed out. Please try again.[/]")
                 sys.exit(1)
 
-    # 3. Audio Streamer Initialization (Ensure local PC audio endpoint is active)
-    import subprocess
-    try:
-        # Silently ensure local Spotify endpoint is active on PC
-        subprocess.Popen(["cmd", "/c", "start", "spotify:"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        time.sleep(1)
-    except Exception:
-        pass
-
-    # 4. Launch Textual App
+    # 3. Launch Textual App
     app = BardApp(config, client)
     app.run()
 
