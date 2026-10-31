@@ -72,7 +72,7 @@ class AudioEngine:
     def is_spotify_player(self) -> bool:
         return "spotify_player" in self.binary_name
 
-    def configure_spotify_player(self, client_id: str) -> None:
+    def configure_spotify_player(self, client_id: str = "") -> None:
         """Ensure ~/.config/spotify-player/app.toml is configured for Bard."""
         if not self.is_spotify_player():
             return
@@ -80,10 +80,7 @@ class AudioEngine:
         conf_dir.mkdir(parents=True, exist_ok=True)
         app_toml = conf_dir / "app.toml"
 
-        content = f"""client_id = "{client_id}"
-login_redirect_uri = "http://127.0.0.1:8888/callback"
-
-[device]
+        content = f"""[device]
 name = "{self.device_name}"
 device_type = "speaker"
 volume = 80
