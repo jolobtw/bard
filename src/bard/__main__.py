@@ -104,16 +104,20 @@ def main() -> None:
                 console.print("[#FF4D4D]Authentication failed or timed out. Please try again.[/]")
                 sys.exit(1)
 
-    # 3. Audio Engine Check
-    engine = AudioEngine(device_name=config.device_name)
+    # 3. Audio Engine Check & Background Streaming Daemon
+    engine = AudioEngine(device_name=config.device_name, client_id=config.client_id)
     if engine.is_installed():
+        if engine.is_spotify_player():
+            engine.configure_spotify_player(config.client_id)
+            if not engine.has_credentials():
+                console.print("\n[#FF7A00 bold]✦ One-time Streaming Engine Authentication ✦[/]")
+                console.print("[#A6ADC8]Authorizing Bard to stream high-fidelity audio directly to your PC speakers...[/]\n")
+                engine.authenticate()
         engine.start()
+        time.sleep(1.5)  # Allow daemon to register "Bard" with Spotify Connect
     else:
-        # Informative notice if standalone librespot binary isn't in bin/
         console.print(
-            f"[#FFAF00]Note: Background streaming engine (librespot) not found in {engine.binary_path}.[/]\n"
-            "[#6C7086]Bard will run as a Spotify Connect controller for your existing active devices.[/]\n"
-            "[#6C7086]You can place 'librespot' in that folder anytime to enable direct audio output.[/]\n"
+            f"[#FFAF00]Note: Streaming engine binary not found in {engine.binary_path}.[/]\n"
         )
         time.sleep(1)
 

@@ -26,6 +26,7 @@ def test_audio_engine_launch_args(tmp_path: Path):
 
 def test_audio_engine_process_lifecycle(tmp_path: Path):
     engine = AudioEngine(bin_dir=tmp_path)
+    (tmp_path / engine.binary_name).touch()
     
     mock_proc = MagicMock()
     mock_proc.poll.return_value = None  # running
