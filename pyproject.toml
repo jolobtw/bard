@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bard"
+version = "0.1.0"
+description = "Arcane Terminal Spotify Player"
+authors = [{ name = "jolobtw" }]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "textual>=0.80.0",
+    "requests>=2.31.0",
+    "pillow>=10.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[project.scripts]
+bard = "bard.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
