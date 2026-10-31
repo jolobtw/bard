@@ -194,16 +194,26 @@ class SpotifyClient:
             pass
         return []
 
-    def play(self, context_uri: Optional[str] = None, uris: Optional[List[str]] = None, device_id: Optional[str] = None) -> bool:
-        """Resume playback or play a playlist/track."""
+    def play(self, context_uri: Optional[str] = None, uris: Optional[List[str]] = None, device_id: Optional[str] = None) -> Tuple[bool, str]:
+        """Resume playback or play a playlist/track. Returns (success, error_message)."""
         params = {"device_id": device_id} if device_id else {}
         body: Dict[str, Any] = {}
         if context_uri:
             body["context_uri"] = context_uri
         elif uris:
             body["uris"] = uris
-        resp = requests.put(f"{SPOTIFY_API_BASE}/me/player/play", params=params, json=body or None, headers=self._headers(), timeout=5)
-        return resp.status_code in (200, 204)
+        try:
+            resp = requests.put(f"{SPOTIFY_API_BASE}/me/player/play", params=params, json=body or None, headers=self._headers(), timeout=5)
+            if resp.status_code in (200, 204):
+                return True, ""
+            err_msg = ""
+            try:
+                err_msg = resp.json().get("error", {}).get("message", "")
+            except Exception:
+                pass
+            return False, err_msg or f"Error {resp.status_code}"
+        except Exception as e:
+            return False, str(e)
 
     def pause(self, device_id: Optional[str] = None) -> bool:
         """Pause playback."""

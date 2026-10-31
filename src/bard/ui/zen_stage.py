@@ -142,9 +142,9 @@ class ZenStage(Widget):
         if not self.playback_data:
             art_widget.update(Text.from_ansi(render_album_art("", width=30, height=12)))
             title_widget.update("[bold #FF7A00]No Music Playing[/]")
-            meta_widget.update("[#6C7086]Press [Tab] to open your playlists and start listening[/]")
+            meta_widget.update("[#A6ADC8]Press [bold #FFD166]\\[Tab][/] to browse playlists[/]\n[#6C7086]Open Spotify on any device (PC, web, or phone) to output sound[/]")
             bar_widget.update("")
-            hint_widget.update("[on #262938 #A6ADC8] [Tab] Playlists [/]   [on #262938 #A6ADC8] [Q] Quit [/]")
+            hint_widget.update("[on #262938 #A6ADC8] \\[Tab] Playlists [/]   [on #262938 #A6ADC8] \\[Q] Quit [/]")
             return
 
         art_widget.update(Text.from_ansi(self._cached_art_ansi))
