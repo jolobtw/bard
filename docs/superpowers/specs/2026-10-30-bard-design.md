@@ -120,7 +120,7 @@ Triggered by pressing `[Tab]`:
 - **First-Run Authentication Flow:**
   - **Streaming Audio Engine (`librespot`):** Authenticates via `librespot --enable-oauth` on first run, which generates a one-click Spotify authorization URL and caches session credentials locally in `~/.config/bard/`.
   - **Interface & Metadata (Web API):** Uses standard OAuth 2.0 PKCE.
-  - **Spotify Developer App:** A personal Spotify Developer Client ID & Redirect URI (`http://localhost:8888/callback`) is used. On first launch, if no credentials exist, `bard` provides a friendly, guided terminal onboarding prompt to enter the Client ID, which is securely saved in `~/.config/bard/config.json`.
+  - **Spotify Developer App:** A personal Spotify Developer Client ID & Redirect URI (`http://127.0.0.1:8888/callback`) is used. On first launch, if no credentials exist, `bard` provides a friendly, guided terminal onboarding prompt to enter the Client ID, which is securely saved in `~/.config/bard/config.json`.
 
 #### 6.2 Album Art Rendering Engine
 - Fetches the 300x300 or 640x640 album artwork URL from track metadata.
