@@ -38,8 +38,9 @@ The existing official Spotify desktop client is resource-heavy (Electron/Chromiu
 
 ### 3. Constraints
 - **Spotify Premium:** Required by Spotify's proprietary audio streaming protocol.
-- **Operating System:** Windows (with standard Windows audio backend, WASAPI / Rodio).
-- **Terminal Environment:** Supports modern terminal capabilities (TrueColor ANSI, UTF-8 glyphs, and optional Kitty/Sixel image rendering with ANSI block fallback).
+- **Operating System:** Cross-platform: **Windows** (WASAPI / Rodio audio backend) and **macOS** (CoreAudio / Rodio audio backend, supporting both Apple Silicon M-series and Intel).
+- **Configuration & State Paths:** Cross-platform standard directory `~/.config/bard/` for credentials, caching, and tokens on both macOS and Windows (matching `arcane-theme`).
+- **Terminal Environment:** Supports modern terminal capabilities across platforms (Ghostty, WezTerm, Windows Terminal, Kitty, iTerm2, etc. with TrueColor ANSI, UTF-8 glyphs, and optional image rendering with ANSI block fallback).
 - **Design System:** Must import and honor `arcane-theme` tokens (`theme.json` / `arcane_theme.py`).
 
 ---
