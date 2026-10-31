@@ -66,12 +66,34 @@ class BardApp(App):
 
     @work(thread=True)
     def locate_bard_device(self) -> None:
-        """Discover Bard Spotify Connect device ID."""
+        """Discover Bard or local PC Spotify Connect device ID and transfer playback to it."""
         devices = self.client.get_devices()
+        local_target = None
+
+        # Priority 1: Device named Bard
         for d in devices:
             if d.get("name") == self.config.device_name:
-                self.bard_device_id = d.get("id")
+                local_target = d.get("id")
                 break
+
+        # Priority 2: Computer device (e.g. HOME-PC)
+        if not local_target:
+            for d in devices:
+                if d.get("type") == "Computer":
+                    local_target = d.get("id")
+                    break
+
+        # Priority 3: Any non-TV active device
+        if not local_target:
+            for d in devices:
+                if d.get("type") != "TV":
+                    local_target = d.get("id")
+                    break
+
+        if local_target:
+            self.bard_device_id = local_target
+            # Automatically reclaim playback control to this PC away from TV
+            self.client.transfer_playback(local_target, play=False)
 
     @work(thread=True)
     def sync_playback_state(self) -> None:
@@ -107,25 +129,18 @@ class BardApp(App):
         if state and state.get("is_playing"):
             self.client.pause(device_id=self.bard_device_id)
         else:
-            devices = self.client.get_devices()
-            target_device_id = self.bard_device_id
-            if not target_device_id:
-                for d in devices:
-                    if d.get("is_active"):
-                        target_device_id = d.get("id")
-                        break
-            if not target_device_id and devices:
-                target_device_id = devices[0].get("id")
-
-            success, err_msg = self.client.play(device_id=target_device_id)
+            success, err_msg = self.client.play(device_id=self.bard_device_id)
             if not success:
-                self.call_from_thread(
-                    self.notify,
-                    "No active Spotify player found.\nPlease open Spotify (Desktop, Web, or Mobile) to output sound.",
-                    title="Spotify Connect",
-                    severity="warning",
-                    timeout=8,
-                )
+                self.locate_bard_device()
+                success, err_msg = self.client.play(device_id=self.bard_device_id)
+                if not success:
+                    self.call_from_thread(
+                        self.notify,
+                        "Could not resume playback. Please pick a playlist from [Tab].",
+                        title="Spotify",
+                        severity="warning",
+                        timeout=5,
+                    )
         self.sync_playback_state()
 
     @work(thread=True)
@@ -161,30 +176,22 @@ class BardApp(App):
     @work(thread=True)
     def handle_drawer_play(self, play_args: Dict[str, Any]) -> None:
         """Handle playlist or track selection from drawer."""
-        devices = self.client.get_devices()
-        target_device_id = self.bard_device_id
-
-        if not target_device_id:
-            for d in devices:
-                if d.get("is_active"):
-                    target_device_id = d.get("id")
-                    break
-        if not target_device_id and devices:
-            target_device_id = devices[0].get("id")
+        if not self.bard_device_id:
+            self.locate_bard_device()
 
         success, err_msg = self.client.play(
             context_uri=play_args.get("context_uri"),
             uris=play_args.get("uris"),
-            device_id=target_device_id,
+            device_id=self.bard_device_id,
         )
 
         if not success:
             self.call_from_thread(
                 self.notify,
-                "No active Spotify player found.\nPlease open Spotify (Desktop, Web, or Mobile) to output sound.",
-                title="Spotify Connect",
+                f"Playback error: {err_msg}",
+                title="Spotify",
                 severity="warning",
-                timeout=8,
+                timeout=5,
             )
         else:
             import time

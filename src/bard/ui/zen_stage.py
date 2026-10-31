@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 from rich.text import Text
 from textual.app import ComposeResult
-from textual.containers import Center, Vertical
+from textual.containers import Center, Horizontal, Vertical
 from textual.widget import Widget
 from textual.widgets import Static
 
@@ -19,7 +19,7 @@ def format_ms(ms: int) -> str:
     return f"{minutes:02d}:{seconds:02d}"
 
 
-def render_flame_progress(progress_ms: int, duration_ms: int, width: int = 40) -> str:
+def render_flame_progress(progress_ms: int, duration_ms: int, width: int = 50) -> str:
     """Render a gradient flame progress bar with timestamps."""
     if duration_ms <= 0:
         pct = 0.0
@@ -34,14 +34,17 @@ def render_flame_progress(progress_ms: int, duration_ms: int, width: int = 40) -
     unfilled_len = bar_width - filled_len
 
     # Flame gradient: start #FF4500 -> end #FFD166
-    filled_bar = f"[#FF7A00]{'━' * max(0, filled_len - 1)}[#FFD166]●[/]" if filled_len > 0 else "[#FFD166]●[/]"
+    if filled_len > 0:
+        filled_bar = f"[#FF7A00]{'━' * max(0, filled_len - 1)}[#FFD166]●[/]"
+    else:
+        filled_bar = "[#FFD166]●[/]"
     unfilled_bar = f"[#2E3244]{'─' * max(0, unfilled_len)}[/]"
 
-    return f"[#6C7086]{curr_str}[/]  {filled_bar}{unfilled_bar}  [#6C7086]{total_str}[/]"
+    return f"[#A6ADC8]{curr_str}[/]  {filled_bar}{unfilled_bar}  [#6C7086]{total_str}[/]"
 
 
 class ZenStage(Widget):
-    """The central Hero stage showcasing album art, track details, and glowing progress."""
+    """The central Hero stage showcasing album art, track details, glowing progress, and transport controls."""
 
     DEFAULT_CSS = """
     ZenStage {
@@ -52,7 +55,7 @@ class ZenStage(Widget):
     }
 
     #stage-container {
-        width: 80;
+        width: 84;
         height: auto;
         border: round #FF7A00;
         background: #181A24;
@@ -85,10 +88,15 @@ class ZenStage(Widget):
         margin-bottom: 1;
     }
 
+    #transport-controls {
+        text-align: center;
+        margin-bottom: 1;
+    }
+
     #controls-hint {
         text-align: center;
         color: #6C7086;
-        margin-top: 1;
+        margin-top: 0;
     }
     """
 
@@ -106,6 +114,7 @@ class ZenStage(Widget):
                 yield Static(id="track-title")
                 yield Static(id="track-meta")
                 yield Static(id="progress-bar")
+                yield Static(id="transport-controls")
                 yield Static(id="controls-hint")
 
     def update_playback(self, data: Optional[Dict[str, Any]]) -> None:
@@ -116,7 +125,7 @@ class ZenStage(Widget):
             art_url = data.get("album_art_url", "")
             if art_url != self._last_art_url or not self._cached_art_ansi:
                 self._last_art_url = art_url
-                self._cached_art_ansi = render_album_art(art_url, width=30, height=14)
+                self._cached_art_ansi = render_album_art(art_url, width=32, height=14)
         self.refresh_stage()
 
     def tick_progress(self, delta_ms: int = 1000) -> None:
@@ -126,7 +135,7 @@ class ZenStage(Widget):
             if duration > 0 and self._current_progress_ms < duration:
                 self._current_progress_ms = min(duration, self._current_progress_ms + delta_ms)
                 bar_widget = self.query_one("#progress-bar", Static)
-                bar_widget.update(Text.from_markup(render_flame_progress(self._current_progress_ms, duration, width=48)))
+                bar_widget.update(Text.from_markup(render_flame_progress(self._current_progress_ms, duration, width=52)))
 
     def refresh_stage(self) -> None:
         """Re-render stage widgets."""
@@ -137,13 +146,15 @@ class ZenStage(Widget):
         title_widget = self.query_one("#track-title", Static)
         meta_widget = self.query_one("#track-meta", Static)
         bar_widget = self.query_one("#progress-bar", Static)
+        transport_widget = self.query_one("#transport-controls", Static)
         hint_widget = self.query_one("#controls-hint", Static)
 
         if not self.playback_data:
-            art_widget.update(Text.from_ansi(render_album_art("", width=30, height=12)))
+            art_widget.update(Text.from_ansi(render_album_art("", width=32, height=12)))
             title_widget.update("[bold #FF7A00]No Music Playing[/]")
-            meta_widget.update("[#A6ADC8]Press [bold #FFD166]\\[Tab][/] to browse playlists[/]\n[#6C7086]Open Spotify on any device (PC, web, or phone) to output sound[/]")
+            meta_widget.update("[#A6ADC8]Press [bold #FFD166]\\[Tab][/] to browse playlists[/]")
             bar_widget.update("")
+            transport_widget.update("[on #262938 #6C7086]  ⏮ Prev  [/]   [on #FF7A00 bold #FFFFFF]  ▶ Play  [/]   [on #262938 #6C7086]  ⏭ Next  [/]")
             hint_widget.update("[on #262938 #A6ADC8] \\[Tab] Playlists [/]   [on #262938 #A6ADC8] \\[Q] Quit [/]")
             return
 
@@ -154,18 +165,25 @@ class ZenStage(Widget):
         duration = self.playback_data.get("duration_ms", 0)
         volume = self.playback_data.get("volume", 50)
         is_playing = self.playback_data.get("is_playing", False)
+        device_name = self.playback_data.get("device_name", "PC Speakers")
 
-        play_icon = "󰐊" if is_playing else "󰏤"
         title_widget.update(f"[bold #FFFFFF]{title}[/]")
         meta_widget.update(f"[#A6ADC8]{artist}[/] [#6C7086]• {album}[/]")
-        bar_widget.update(Text.from_markup(render_flame_progress(self._current_progress_ms, duration, width=48)))
+        bar_widget.update(Text.from_markup(render_flame_progress(self._current_progress_ms, duration, width=52)))
+
+        play_btn = "[on #FF7A00 bold #FFFFFF]  ⏸ Pause  [/]" if is_playing else "[on #FF7A00 bold #FFFFFF]  ▶ Play  [/]"
+        transport_markup = (
+            f"[on #262938 #FFD166]  ⏮ Prev [P]  [/]   "
+            f"{play_btn}   "
+            f"[on #262938 #FFD166]  ⏭ Next [N]  [/]   "
+            f"[on #262938 #A6ADC8]  󰕾 {volume}% [- / +]  [/]"
+        )
+        transport_widget.update(transport_markup)
+
         hint_widget.update(
-            f"[#FFD166]󰕾 {volume}%[/]   "
-            f"[on #262938 #A6ADC8] [Space] {play_icon} [/]  "
-            f"[on #262938 #A6ADC8] [N] Next [/]  "
-            f"[on #262938 #A6ADC8] [P] Prev [/]  "
-            f"[on #262938 #A6ADC8] [Tab] Playlists [/]  "
-            f"[on #262938 #A6ADC8] [Q] Quit [/]"
+            f"[#6C7086]󰓇 Audio Output: [bold #FFD166]{device_name}[/]   •   "
+            f"[on #262938 #A6ADC8] \\[Tab] Playlists [/]   "
+            f"[on #262938 #A6ADC8] \\[Q] Quit [/]"
         )
 
     def on_mount(self) -> None:

@@ -104,22 +104,14 @@ def main() -> None:
                 console.print("[#FF4D4D]Authentication failed or timed out. Please try again.[/]")
                 sys.exit(1)
 
-    # 3. Audio Engine Check & Background Streaming Daemon
-    engine = AudioEngine(device_name=config.device_name, client_id=config.client_id)
-    if engine.is_installed():
-        if engine.is_spotify_player():
-            engine.configure_spotify_player(config.client_id)
-            if not engine.has_credentials():
-                console.print("\n[#FF7A00 bold]✦ One-time Streaming Engine Authentication ✦[/]")
-                console.print("[#A6ADC8]Authorizing Bard to stream high-fidelity audio directly to your PC speakers...[/]\n")
-                engine.authenticate()
-        engine.start()
-        time.sleep(1.5)  # Allow daemon to register "Bard" with Spotify Connect
-    else:
-        console.print(
-            f"[#FFAF00]Note: Streaming engine binary not found in {engine.binary_path}.[/]\n"
-        )
+    # 3. Audio Streamer Initialization (Ensure local PC audio endpoint is active)
+    import subprocess
+    try:
+        # Silently ensure local Spotify endpoint is active on PC
+        subprocess.Popen(["cmd", "/c", "start", "spotify:"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         time.sleep(1)
+    except Exception:
+        pass
 
     # 4. Launch Textual App
     app = BardApp(config, client)
