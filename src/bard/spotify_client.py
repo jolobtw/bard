@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import html
+import json
 import os
+import re
 import secrets
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -226,6 +229,44 @@ class SpotifyClient:
             pass
         return self._playlists_cache or []
 
+    def _fetch_fallback_embed_tracks(self, playlist_id: str) -> List[Dict[str, Any]]:
+        """Fetch tracklist for shared or third-party playlists via Spotify's public embed page.
+        
+        Spotify's Web API restricts /playlists/{id}/items and /playlists/{id}/tracks for
+        development apps on playlists not owned by the developer (returning 403 Forbidden).
+        The public embed page provides full tracklists and Spotify URIs without restriction.
+        """
+        try:
+            url = f"https://open.spotify.com/embed/playlist/{playlist_id}"
+            resp = requests.get(url, timeout=5)
+            if resp.status_code != 200:
+                return []
+            m = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', resp.text)
+            if not m:
+                return []
+            data = json.loads(m.group(1))
+            entity = data.get("props", {}).get("pageProps", {}).get("state", {}).get("data", {}).get("entity", {})
+            track_list = entity.get("trackList", [])
+            tracks = []
+            for t in track_list:
+                dur_ms = t.get("duration", 0)
+                duration_s = dur_ms // 1000
+                mins, secs = divmod(duration_s, 60)
+                uri = t.get("uri", "")
+                track_id = uri.split(":")[-1] if uri else ""
+                raw_title = t.get("title", "Unknown Track") or "Unknown Track"
+                raw_artist = t.get("subtitle", "Unknown Artist") or "Unknown Artist"
+                tracks.append({
+                    "id": track_id,
+                    "name": html.unescape(raw_title),
+                    "artist": html.unescape(raw_artist).replace("\xa0", " "),
+                    "duration_str": f"{mins:02d}:{secs:02d}",
+                    "uri": uri,
+                })
+            return tracks
+        except Exception:
+            return []
+
     def get_playlist_tracks(self, playlist_id: str, force_refresh: bool = False) -> List[Dict[str, Any]]:
         """Retrieve tracks inside a specific playlist with per-playlist caching."""
         if not force_refresh and playlist_id in self._tracks_cache:
@@ -259,13 +300,32 @@ class SpotifyClient:
                         "duration_str": f"{mins:02d}:{secs:02d}",
                         "uri": t.get("uri", ""),
                     })
-                self._tracks_cache[playlist_id] = tracks
-                return tracks
+                if tracks:
+                    self._tracks_cache[playlist_id] = tracks
+                    return tracks
+
+            # If Web API returned 403 Forbidden or empty tracks (common for shared/public playlists),
+            # fall back to the public Spotify embed page.
+            if resp.status_code == 403 or resp.status_code != 200:
+                embed_tracks = self._fetch_fallback_embed_tracks(playlist_id)
+                self._tracks_cache[playlist_id] = embed_tracks
+                return embed_tracks
+
         except Exception:
             pass
-        return self._tracks_cache.get(playlist_id, [])
 
-    def play(self, context_uri: Optional[str] = None, uris: Optional[List[str]] = None, device_id: Optional[str] = None) -> Tuple[bool, str]:
+        # Final fallback check if tracks empty
+        fallback = self._fetch_fallback_embed_tracks(playlist_id)
+        self._tracks_cache[playlist_id] = fallback
+        return fallback
+
+    def play(
+        self,
+        context_uri: Optional[str] = None,
+        uris: Optional[List[str]] = None,
+        offset: Optional[Dict[str, Any]] = None,
+        device_id: Optional[str] = None,
+    ) -> Tuple[bool, str]:
         """Resume playback or play a playlist/track. Returns (success, error_message)."""
         if self.is_rate_limited():
             return False, self.get_cooldown_message()
@@ -273,6 +333,8 @@ class SpotifyClient:
         body: Dict[str, Any] = {}
         if context_uri:
             body["context_uri"] = context_uri
+            if offset:
+                body["offset"] = offset
         elif uris:
             body["uris"] = uris
         try:

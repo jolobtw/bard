@@ -162,3 +162,85 @@ def test_rate_limit_and_quota_handling(tmp_path):
         assert success is False
         assert mock_put.call_count == 0
 
+
+def test_get_playlist_tracks_fallback_to_embed_on_403(tmp_path):
+    import json
+    cfg = BardConfig(config_path=tmp_path / "config.json")
+    cfg.access_token = "valid_token"
+    cfg.token_expiry = 9999999999
+    client = SpotifyClient(cfg)
+
+    # First call: API returns 403 Forbidden
+    mock_api_resp = MagicMock()
+    mock_api_resp.status_code = 403
+    mock_api_resp.json.return_value = {"error": {"status": 403, "message": "Forbidden"}}
+
+    # Second call (fallback): Embed page returns HTML with __NEXT_DATA__
+    embed_payload = {
+        "props": {
+            "pageProps": {
+                "state": {
+                    "data": {
+                        "entity": {
+                            "trackList": [
+                                {
+                                    "uri": "spotify:track:abc123",
+                                    "title": "Shared Masterpiece",
+                                    "subtitle": "Friend &amp; Artist",
+                                    "duration": 215000,
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    }
+    mock_embed_resp = MagicMock()
+    mock_embed_resp.status_code = 200
+    mock_embed_resp.text = f'<html><script id="__NEXT_DATA__" type="application/json">{json.dumps(embed_payload)}</script></html>'
+
+    def mock_get_side_effect(url, *args, **kwargs):
+        if "api.spotify.com" in url:
+            return mock_api_resp
+        return mock_embed_resp
+
+    with patch("requests.get", side_effect=mock_get_side_effect):
+        tracks = client.get_playlist_tracks("shared_playlist_id")
+        assert len(tracks) == 1
+        assert tracks[0]["id"] == "abc123"
+        assert tracks[0]["name"] == "Shared Masterpiece"
+        assert tracks[0]["artist"] == "Friend & Artist"
+        assert tracks[0]["duration_str"] == "03:35"
+        assert tracks[0]["uri"] == "spotify:track:abc123"
+
+        # Subsequent call should use cache
+        cached_tracks = client.get_playlist_tracks("shared_playlist_id")
+        assert cached_tracks == tracks
+
+
+def test_play_with_offset(tmp_path):
+    cfg = BardConfig(config_path=tmp_path / "config.json")
+    cfg.access_token = "valid_token"
+    cfg.token_expiry = 9999999999
+    client = SpotifyClient(cfg)
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 204
+
+    with patch("requests.put", return_value=mock_resp) as mock_put:
+        success, err = client.play(
+            context_uri="spotify:playlist:shared1",
+            offset={"uri": "spotify:track:t1"},
+            device_id="dev1",
+        )
+        assert success is True
+        assert err == ""
+        mock_put.assert_called_once()
+        _, kwargs = mock_put.call_args
+        assert kwargs["json"] == {
+            "context_uri": "spotify:playlist:shared1",
+            "offset": {"uri": "spotify:track:t1"},
+        }
+
+

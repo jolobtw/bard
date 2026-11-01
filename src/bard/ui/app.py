@@ -202,11 +202,23 @@ class BardApp(App):
         if not self.bard_device_id:
             self.locate_bard_device()
 
+        context_uri = play_args.get("context_uri")
+        uris = play_args.get("uris") if not context_uri else None
+        offset = play_args.get("offset")
+
         success, err_msg = self.client.play(
-            context_uri=play_args.get("context_uri"),
-            uris=play_args.get("uris"),
+            context_uri=context_uri,
+            uris=uris,
+            offset=offset,
             device_id=self.bard_device_id,
         )
+
+        # Fallback to direct track URIs if context playback with offset fails
+        if not success and play_args.get("uris"):
+            success, err_msg = self.client.play(
+                uris=play_args.get("uris"),
+                device_id=self.bard_device_id,
+            )
 
         if not success:
             self.call_from_thread(

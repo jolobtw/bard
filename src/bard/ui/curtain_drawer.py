@@ -317,6 +317,19 @@ class CurtainDrawer(Widget):
             # Play specific track
             if 0 <= event.option_index < len(self.tracks):
                 selected = self.tracks[event.option_index]
+                plist = self.query_one("#playlist-list", OptionList)
+                playlist_uri = None
+                if plist.highlighted is not None and 0 <= plist.highlighted < len(self.playlists):
+                    playlist_uri = self.playlists[plist.highlighted].get("uri")
+
                 if self.on_play:
-                    self.on_play({"uris": [selected.get("uri")]})
+                    track_uri = selected.get("uri")
+                    if playlist_uri and track_uri:
+                        self.on_play({
+                            "context_uri": playlist_uri,
+                            "offset": {"uri": track_uri},
+                            "uris": [track_uri],
+                        })
+                    elif track_uri:
+                        self.on_play({"uris": [track_uri]})
                 self.hide()
