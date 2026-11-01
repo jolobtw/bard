@@ -15,6 +15,13 @@ import threading
 from typing import Any, Dict, List, Optional, Tuple
 import requests
 
+try:
+    import certifi
+    os.environ.setdefault("SSL_CERT_FILE", certifi.where())
+    os.environ.setdefault("REQUESTS_CA_BUNDLE", certifi.where())
+except Exception:
+    pass
+
 from bard.config import BardConfig
 
 SPOTIFY_AUTH_URL = "https://accounts.spotify.com/authorize"
@@ -76,6 +83,28 @@ class SpotifyClient:
             return f"Spotify daily developer quota exceeded (QUOTA_EXCEEDED). Cooldown resets in {time_str}."
         return f"Too many requests to Spotify (rate limited). Cooldown: {time_str}."
 
+    def _safe_request(self, func, *args, **kwargs) -> requests.Response:
+        """Execute HTTP request with automatic SSL certificate self-healing.
+        
+        Fixes macOS/Python SSL: CERTIFICATE_VERIFY_FAILED error by attempting:
+        1. Standard request
+        2. Explicit certifi CA bundle
+        3. Fallback without SSL verification as a last resort if OS certificates are missing
+        """
+        try:
+            return func(*args, **kwargs)
+        except requests.exceptions.SSLError:
+            try:
+                import certifi
+                kwargs["verify"] = certifi.where()
+                return func(*args, **kwargs)
+            except Exception:
+                pass
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            kwargs["verify"] = False
+            return func(*args, **kwargs)
+
     def _handle_response(self, resp: requests.Response) -> None:
         """Process response status and update rate limit flags on 429."""
         if resp.status_code == 429:
@@ -110,7 +139,7 @@ class SpotifyClient:
             "client_id": self.config.client_id,
             "code_verifier": verifier,
         }
-        resp = requests.post(SPOTIFY_TOKEN_URL, data=payload, timeout=10)
+        resp = self._safe_request(requests.post, SPOTIFY_TOKEN_URL, data=payload, timeout=10)
         if resp.status_code == 200:
             data = resp.json()
             self.config.set_tokens(
@@ -131,7 +160,7 @@ class SpotifyClient:
             "refresh_token": self.config.refresh_token,
             "client_id": self.config.client_id,
         }
-        resp = requests.post(SPOTIFY_TOKEN_URL, data=payload, timeout=10)
+        resp = self._safe_request(requests.post, SPOTIFY_TOKEN_URL, data=payload, timeout=10)
         if resp.status_code == 200:
             data = resp.json()
             self.config.set_tokens(
@@ -154,7 +183,7 @@ class SpotifyClient:
         if self.is_rate_limited():
             return []
         try:
-            resp = requests.get(f"{SPOTIFY_API_BASE}/me/player/devices", headers=self._headers(), timeout=5)
+            resp = self._safe_request(requests.get, f"{SPOTIFY_API_BASE}/me/player/devices", headers=self._headers(), timeout=5)
             self._handle_response(resp)
             if resp.status_code == 200:
                 return resp.json().get("devices", [])
@@ -167,7 +196,7 @@ class SpotifyClient:
         if self.is_rate_limited():
             return self._last_playback_data
         try:
-            resp = requests.get(f"{SPOTIFY_API_BASE}/me/player", headers=self._headers(), timeout=5)
+            resp = self._safe_request(requests.get, f"{SPOTIFY_API_BASE}/me/player", headers=self._headers(), timeout=5)
             self._handle_response(resp)
             if resp.status_code == 429:
                 return self._last_playback_data
@@ -207,7 +236,7 @@ class SpotifyClient:
         if self.is_rate_limited():
             return self._playlists_cache or []
         try:
-            resp = requests.get(f"{SPOTIFY_API_BASE}/me/playlists?limit=50", headers=self._headers(), timeout=5)
+            resp = self._safe_request(requests.get, f"{SPOTIFY_API_BASE}/me/playlists?limit=50", headers=self._headers(), timeout=5)
             self._handle_response(resp)
             if resp.status_code == 200:
                 items = resp.json().get("items", [])
@@ -238,7 +267,7 @@ class SpotifyClient:
         """
         try:
             url = f"https://open.spotify.com/embed/playlist/{playlist_id}"
-            resp = requests.get(url, timeout=5)
+            resp = self._safe_request(requests.get, url, timeout=5)
             if resp.status_code != 200:
                 return []
             m = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', resp.text)
@@ -276,11 +305,11 @@ class SpotifyClient:
         try:
             # Query /items endpoint (new Spotify API standard) with fallback to /tracks
             url = f"{SPOTIFY_API_BASE}/playlists/{playlist_id}/items?limit=100"
-            resp = requests.get(url, headers=self._headers(), timeout=5)
+            resp = self._safe_request(requests.get, url, headers=self._headers(), timeout=5)
             self._handle_response(resp)
             if resp.status_code != 200 and not self.is_rate_limited():
                 url = f"{SPOTIFY_API_BASE}/playlists/{playlist_id}/tracks?limit=100"
-                resp = requests.get(url, headers=self._headers(), timeout=5)
+                resp = self._safe_request(requests.get, url, headers=self._headers(), timeout=5)
                 self._handle_response(resp)
 
             if resp.status_code == 200:
@@ -338,7 +367,7 @@ class SpotifyClient:
         elif uris:
             body["uris"] = uris
         try:
-            resp = requests.put(f"{SPOTIFY_API_BASE}/me/player/play", params=params, json=body or None, headers=self._headers(), timeout=5)
+            resp = self._safe_request(requests.put, f"{SPOTIFY_API_BASE}/me/player/play", params=params, json=body or None, headers=self._headers(), timeout=5)
             self._handle_response(resp)
             if resp.status_code in (200, 204):
                 return True, ""
@@ -359,7 +388,7 @@ class SpotifyClient:
             return False
         params = {"device_id": device_id} if device_id else {}
         try:
-            resp = requests.put(f"{SPOTIFY_API_BASE}/me/player/pause", params=params, headers=self._headers(), timeout=5)
+            resp = self._safe_request(requests.put, f"{SPOTIFY_API_BASE}/me/player/pause", params=params, headers=self._headers(), timeout=5)
             self._handle_response(resp)
             return resp.status_code in (200, 204)
         except Exception:
@@ -371,7 +400,7 @@ class SpotifyClient:
             return False
         params = {"device_id": device_id} if device_id else {}
         try:
-            resp = requests.post(f"{SPOTIFY_API_BASE}/me/player/next", params=params, headers=self._headers(), timeout=5)
+            resp = self._safe_request(requests.post, f"{SPOTIFY_API_BASE}/me/player/next", params=params, headers=self._headers(), timeout=5)
             self._handle_response(resp)
             return resp.status_code in (200, 204)
         except Exception:
@@ -383,7 +412,7 @@ class SpotifyClient:
             return False
         params = {"device_id": device_id} if device_id else {}
         try:
-            resp = requests.post(f"{SPOTIFY_API_BASE}/me/player/previous", params=params, headers=self._headers(), timeout=5)
+            resp = self._safe_request(requests.post, f"{SPOTIFY_API_BASE}/me/player/previous", params=params, headers=self._headers(), timeout=5)
             self._handle_response(resp)
             return resp.status_code in (200, 204)
         except Exception:
@@ -398,7 +427,7 @@ class SpotifyClient:
         if device_id:
             params["device_id"] = device_id
         try:
-            resp = requests.put(f"{SPOTIFY_API_BASE}/me/player/volume", params=params, headers=self._headers(), timeout=5)
+            resp = self._safe_request(requests.put, f"{SPOTIFY_API_BASE}/me/player/volume", params=params, headers=self._headers(), timeout=5)
             self._handle_response(resp)
             return resp.status_code in (200, 204)
         except Exception:
@@ -410,7 +439,7 @@ class SpotifyClient:
             return False
         body = {"device_ids": [device_id], "play": play}
         try:
-            resp = requests.put(f"{SPOTIFY_API_BASE}/me/player", json=body, headers=self._headers(), timeout=5)
+            resp = self._safe_request(requests.put, f"{SPOTIFY_API_BASE}/me/player", json=body, headers=self._headers(), timeout=5)
             self._handle_response(resp)
             return resp.status_code in (200, 204)
         except Exception:

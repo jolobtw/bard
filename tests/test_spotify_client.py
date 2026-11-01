@@ -244,3 +244,34 @@ def test_play_with_offset(tmp_path):
         }
 
 
+def test_ssl_error_self_healing(tmp_path):
+    import requests
+    cfg = BardConfig(config_path=tmp_path / "config.json")
+    cfg.client_id = "test_client"
+    client = SpotifyClient(cfg)
+
+    mock_success = MagicMock()
+    mock_success.status_code = 200
+    mock_success.json.return_value = {
+        "access_token": "recovered_token",
+        "refresh_token": "recovered_refresh",
+        "expires_in": 3600,
+    }
+
+    call_count = 0
+
+    def mock_post_ssl_flaky(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if "verify" not in kwargs:
+            raise requests.exceptions.SSLError("SSL: CERTIFICATE_VERIFY_FAILED")
+        return mock_success
+
+    with patch("requests.post", side_effect=mock_post_ssl_flaky):
+        success = client.exchange_code_for_token("auth_code", "verifier")
+        assert success is True
+        assert call_count >= 2
+        assert cfg.access_token == "recovered_token"
+
+
+
