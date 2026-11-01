@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional
 from rich.text import Text
-from textual import events
+from textual import events, work
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widget import Widget
@@ -132,10 +132,10 @@ class CurtainDrawer(Widget):
             self.remove_class("-visible")
         else:
             self.add_class("-visible")
-            self.refresh_playlists()
             plist = self.query_one("#playlist-list", OptionList)
             plist.focus()
             self._update_column_headers()
+            self.refresh_playlists()
 
     def hide(self) -> None:
         """Close drawer."""
@@ -189,15 +189,42 @@ class CurtainDrawer(Widget):
 
     def refresh_playlists(self) -> None:
         """Fetch user's playlists and populate the playlist column."""
-        self.playlists = self.client.get_playlists()
+        plist = self.query_one("#playlist-list", OptionList)
+        tlist = self.query_one("#track-list", OptionList)
+
+        # If already cached in client, populate immediately
+        cache = getattr(self.client, "_playlists_cache", None)
+        if isinstance(cache, list):
+            self._populate_playlists(cache)
+            return
+
+        # Otherwise display immediate loading state and fetch in background
+        plist.clear_options()
+        plist.add_option(Option(Text("  ✦ Deciphering playlists...", style="#FFD166 italic"), id="loading_pl", disabled=True))
+        tlist.clear_options()
+        tlist.add_option(Option(Text("  ✦ Waiting for library...", style="#6C7086 italic"), id="waiting_tr", disabled=True))
+        self._load_playlists_worker()
+
+    @work(thread=True, exclusive=True, group="playlist_fetch")
+    def _load_playlists_worker(self) -> None:
+        playlists = self.client.get_playlists()
+        self.app.call_from_thread(self._populate_playlists, playlists)
+
+    def _populate_playlists(self, playlists: List[Dict[str, Any]]) -> None:
+        self.playlists = playlists
         plist = self.query_one("#playlist-list", OptionList)
         plist.clear_options()
+
+        if not self.playlists:
+            msg = "  [Rate limited / Cooldown in effect]" if self.client.is_rate_limited() else "  No playlists found"
+            plist.add_option(Option(Text(msg, style="#6C7086 italic"), disabled=True))
+            self._update_column_headers()
+            return
 
         for idx, p in enumerate(self.playlists):
             raw_name = p.get("name", "Untitled") or "Untitled"
             clean_name = f"{raw_name[:23]}..." if len(raw_name) > 26 else raw_name
             count = p.get("tracks_count", 0)
-            # Neatly align playlist name and track count on a single row
             label = f" {clean_name:<26}  [{count:>3}]"
             plist.add_option(Option(Text(label, no_wrap=True), id=str(idx)))
 
@@ -212,32 +239,70 @@ class CurtainDrawer(Widget):
         tlist = self.query_one("#track-list", OptionList)
         tlist.clear_options()
 
-        if 0 <= index < len(self.playlists):
-            pid = self.playlists[index].get("id")
-            if pid:
-                self.tracks = self.client.get_playlist_tracks(pid)
-                for idx, t in enumerate(self.tracks):
-                    raw_title = t.get("name", "Unknown Track") or "Unknown Track"
-                    raw_artist = t.get("artist", "Unknown Artist") or "Unknown Artist"
-                    dur = t.get("duration_str", "00:00")
-
-                    clean_title = f"{raw_title[:30]}..." if len(raw_title) > 33 else raw_title
-                    clean_artist = f"{raw_artist[:20]}..." if len(raw_artist) > 23 else raw_artist
-
-                    # Single-line format: Index, Title, Artist, Duration
-                    label = f" {idx+1:>2}.  {clean_title:<33}  {clean_artist:<23}  {dur:>5}"
-                    tlist.add_option(Option(Text(label, no_wrap=True), id=str(idx)))
-            else:
-                self.tracks = []
-        else:
+        if not (0 <= index < len(self.playlists)):
             self.tracks = []
+            self._update_column_headers()
+            return
+
+        pid = self.playlists[index].get("id")
+        if not pid:
+            self.tracks = []
+            self._update_column_headers()
+            return
+
+        # If already cached, populate immediately
+        tracks_cache = getattr(self.client, "_tracks_cache", None)
+        if isinstance(tracks_cache, dict) and pid in tracks_cache:
+            self._populate_tracks(index, tracks_cache[pid])
+            return
+
+        # Display immediate loading state and fetch in background
+        tlist.add_option(Option(Text("  ✦ Reading tracklist...", style="#FFD166 italic"), id="loading_tr", disabled=True))
+        try:
+            t_header = self.query_one("#track-header", Static)
+            t_header.update("[#FFD166]  TRACKS  (loading...)[/]")
+        except Exception:
+            pass
+
+        self._load_tracks_worker(index, pid)
+
+    @work(thread=True, exclusive=True, group="track_fetch")
+    def _load_tracks_worker(self, index: int, playlist_id: str) -> None:
+        tracks = self.client.get_playlist_tracks(playlist_id)
+        self.app.call_from_thread(self._populate_tracks, index, tracks)
+
+    def _populate_tracks(self, index: int, tracks: List[Dict[str, Any]]) -> None:
+        plist = self.query_one("#playlist-list", OptionList)
+        if plist.highlighted != index:
+            # User navigated away to another playlist before fetch finished
+            return
+
+        self.tracks = tracks
+        tlist = self.query_one("#track-list", OptionList)
+        tlist.clear_options()
+
+        if not tracks:
+            msg = "  [Rate limited / Cooldown in effect]" if self.client.is_rate_limited() else "  No tracks in this playlist"
+            tlist.add_option(Option(Text(msg, style="#6C7086 italic"), disabled=True))
+        else:
+            for idx, t in enumerate(self.tracks):
+                raw_title = t.get("name", "Unknown Track") or "Unknown Track"
+                raw_artist = t.get("artist", "Unknown Artist") or "Unknown Artist"
+                dur = t.get("duration_str", "00:00")
+
+                clean_title = f"{raw_title[:30]}..." if len(raw_title) > 33 else raw_title
+                clean_artist = f"{raw_artist[:20]}..." if len(raw_artist) > 23 else raw_artist
+
+                label = f" {idx+1:>2}.  {clean_title:<33}  {clean_artist:<23}  {dur:>5}"
+                tlist.add_option(Option(Text(label, no_wrap=True), id=str(idx)))
 
         self._update_column_headers()
 
     def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
         """When playlist selection moves, preview its tracks."""
         if event.option_list.id == "playlist-list" and event.option_index is not None:
-            self.load_tracks_for_playlist(event.option_index)
+            if 0 <= event.option_index < len(self.playlists):
+                self.load_tracks_for_playlist(event.option_index)
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         """When Enter is pressed on an option, trigger playback."""
