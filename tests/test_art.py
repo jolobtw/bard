@@ -2,7 +2,7 @@
 
 import io
 from PIL import Image
-from bard.art import image_to_ansi, render_album_art
+from bard.art import image_to_ansi, render_album_art, render_sigil_art
 
 
 def test_image_to_ansi():
@@ -24,3 +24,13 @@ def test_image_to_ansi():
 def test_render_album_art_fallback_empty():
     res = render_album_art("")
     assert "NO ARTWORK" in res or "♫" in res
+
+
+def test_render_sigil_art():
+    res = render_sigil_art(width=32, height=12)
+    lines = res.split("\n")
+    assert len(lines) == 12
+    # Must contain arcane runes
+    assert "✦" in res or "◈" in res or "◇" in res
+    assert "♫" in res or "♪" in res
+

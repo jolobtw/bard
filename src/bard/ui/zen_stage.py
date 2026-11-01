@@ -164,16 +164,26 @@ class ZenStage(Widget):
 
         if not self.playback_data:
             art_widget.update(Text.from_ansi(render_album_art("", width=32, height=12)))
-            title_widget.update("[bold #FF7A00]No Music Playing[/]")
-            meta_widget.update(Text.assemble(("Press ", "#A6ADC8"), ("[Tab]", "bold #FFD166"), (" to browse your library", "#A6ADC8")))
+            title_widget.update("[bold #FF7A00]THE STAGE IS SILENT[/]")
+            meta_widget.update(
+                Text.assemble(
+                    ("Summon your library with ", "#A6ADC8"),
+                    ("[Tab]", "bold #FFD166"),
+                    (" or press ", "#A6ADC8"),
+                    ("[Space]", "bold #FFD166"),
+                    (" to resume", "#A6ADC8"),
+                )
+            )
             bar_widget.update("")
-            transport_widget.update("[on #262938 #6C7086]  ◄ Prev [P]  [/]     [on #262938 bold #A6ADC8]   ▶ PLAY    [/]     [on #262938 #6C7086]  Next [N] ►  [/]")
-            status_widget.update("[#6C7086]Ready to stream[/]")
+            transport_widget.update("[on #262938 #6C7086]  ◄ Prev [P]  [/]     [on #262938 bold #FFD166]   ▶ RESUME    [/]     [on #262938 #6C7086]  Next [N] ►  [/]")
+            status_widget.update("[#6C7086]Ready to stream • Local PC Audio[/]")
             hint_widget.update(
                 Text.assemble(
                     (" [Tab] Playlists ", "on #262938 bold #FFD166"),
                     ("   ", ""),
-                    (" [Q] Quit ", "on #262938 bold #A6ADC8"),
+                    (" [Space] Resume ", "on #262938 bold #A6ADC8"),
+                    ("   ", ""),
+                    (" [Q] Quit ", "on #262938 bold #6C7086"),
                 )
             )
             return

@@ -41,19 +41,54 @@ def image_to_ansi(img: Image.Image, width: int = 28, height: int = 14) -> str:
     return "\n".join(lines)
 
 
+def render_sigil_art(width: int = 32, height: int = 12) -> str:
+    """Render a mystical 24-bit TrueColor Arcane musical sigil emblem."""
+    bg_ansi = "\x1b[48;2;24;26;36m"
+    gold = "\x1b[38;2;255;209;102m"
+    flame = "\x1b[38;2;255;122;0m"
+    amber = "\x1b[38;2;255;165;0m"
+    subtext = "\x1b[38;2;166;173;200m"
+    muted = "\x1b[38;2;108;112;134m"
+    reset = "\x1b[0m"
+
+    sigil_lines = [
+        f"{muted}·  {gold}✦  {muted}·",
+        f"{muted}╭─── {flame}◈ {muted}───╮",
+        f"{muted}╭─╯   {amber}◇   ◇   {muted}╰─╮",
+        f"{muted}│     {subtext}♫     ♫     {muted}│",
+        f"{muted}│   {amber}( (  {gold}◈  {amber}) )   {muted}│",
+        f"{flame}◈──  {amber}◇  {gold}✦ ❖ ✦  {amber}◇  {flame}──◈",
+        f"{muted}│   {amber}( (  {gold}◈  {amber}) )   {muted}│",
+        f"{muted}│     {subtext}♫     ♫     {muted}│",
+        f"{muted}╰─╮   {amber}◇   ◇   {muted}╭─╯",
+        f"{muted}╰─── {flame}◈ {muted}───╯",
+        f"{muted}·  {gold}✦  {muted}·",
+        f"{muted}✧  {gold}ARCANE RESONANCE  {muted}✧",
+    ]
+
+    import re
+    ansi_escape = re.compile(r'\x1b\[[0-9;]*m')
+
+    # Truncate or pad lines to fit target height
+    lines = sigil_lines[:height]
+    while len(lines) < height:
+        lines.append("")
+
+    formatted = []
+    for line in lines:
+        plain_len = len(ansi_escape.sub('', line))
+        left_pad = max(0, (width - plain_len) // 2)
+        right_pad = max(0, width - plain_len - left_pad)
+        full_line = f"{bg_ansi}{' ' * left_pad}{line}{' ' * right_pad}{reset}"
+        formatted.append(full_line)
+
+    return "\n".join(formatted)
+
+
 def render_placeholder(width: int = 28, height: int = 14) -> str:
     """Render an aesthetic Arcane placeholder when no artwork is present."""
-    lines = []
-    mid_y = height // 2
-    for y in range(height):
-        if y == mid_y - 1:
-            text = "♪  ♫  ♪".center(width)
-        elif y == mid_y:
-            text = "[ NO ARTWORK ]".center(width)
-        else:
-            text = " " * width
-        lines.append(f"\x1b[48;2;24;26;36m\x1b[38;2;108;112;134m{text}\x1b[0m")
-    return "\n".join(lines)
+    return render_sigil_art(width=width, height=height)
+
 
 
 def render_album_art(url: str, width: int = 28, height: int = 14) -> str:

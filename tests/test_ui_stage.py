@@ -14,3 +14,27 @@ def test_render_flame_progress():
     assert "00:30" in output
     assert "01:00" in output
     assert "●" in output
+
+
+def test_zen_stage_empty_state_rendering():
+    from textual.app import App, ComposeResult
+    from bard.ui.zen_stage import ZenStage
+    from textual.widgets import Static
+    import asyncio
+
+    class TestApp(App):
+        def compose(self) -> ComposeResult:
+            yield ZenStage()
+
+    async def _test():
+        app = TestApp()
+        async with app.run_test():
+            stage = app.query_one(ZenStage)
+            stage.refresh_stage()
+            title = stage.query_one("#track-title", Static)
+            assert "STAGE IS SILENT" in str(title.render())
+            art = stage.query_one("#art-box", Static)
+            assert "ARCANE" in str(art.render()) or "✦" in str(art.render()) or "◈" in str(art.render())
+
+    asyncio.run(_test())
+
