@@ -371,6 +371,23 @@ class SpotifyClient:
             self._handle_response(resp)
             if resp.status_code in (200, 204):
                 return True, ""
+
+            # If 404 (No active device) and device_id is specified, attempt activation
+            if resp.status_code == 404 and device_id:
+                if not body:
+                    # When resuming, transfer_playback with play=True directly activates device and plays
+                    if self.transfer_playback(device_id, play=True):
+                        return True, ""
+                else:
+                    # When playing context/uris, transfer device first then retry play
+                    if self.transfer_playback(device_id, play=False):
+                        import time
+                        time.sleep(0.3)
+                        retry_resp = self._safe_request(requests.put, f"{SPOTIFY_API_BASE}/me/player/play", params=params, json=body or None, headers=self._headers(), timeout=5)
+                        self._handle_response(retry_resp)
+                        if retry_resp.status_code in (200, 204):
+                            return True, ""
+
             if resp.status_code == 429:
                 return False, self.get_cooldown_message()
             err_msg = ""

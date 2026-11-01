@@ -180,6 +180,15 @@ class BardApp(App):
             self.drawer_widget.hide()
             self.stage_widget.focus()
 
+    def action_quit(self) -> None:
+        """Pause playback on the local device and exit."""
+        if self.bard_device_id:
+            try:
+                self.client.pause(device_id=self.bard_device_id)
+            except Exception:
+                pass
+        self.exit()
+
     @work(thread=True)
     def action_toggle_playback(self) -> None:
         """Play or pause playback."""
@@ -224,10 +233,15 @@ class BardApp(App):
 
             success, err_msg = self.client.play(device_id=self.bard_device_id)
             if not success:
+                # Provide clear, friendly guidance if Spotify doesn't have an active track loaded to resume
+                if "no active device" in (err_msg or "").lower() or not (state and state.get("title")):
+                    msg = "No music is currently queued to resume.\nPress [Tab] to pick a playlist and start playing!"
+                else:
+                    msg = err_msg or "Could not resume playback. Please pick a playlist from [Tab]."
                 self.call_from_thread(
                     self.notify,
-                    err_msg or "Could not resume playback. Please pick a playlist from [Tab].",
-                    title="Spotify",
+                    msg,
+                    title="Bard Audio",
                     severity="warning",
                     timeout=5,
                 )

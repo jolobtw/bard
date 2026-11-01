@@ -176,10 +176,16 @@ def main() -> None:
         time.sleep(1)
 
     # 4. Launch Textual App
+    app = None
     try:
         app = BardApp(config, client)
         app.run()
     finally:
+        if app and getattr(app, "bard_device_id", None):
+            try:
+                client.pause(device_id=app.bard_device_id)
+            except Exception:
+                pass
         engine.stop()
 
 

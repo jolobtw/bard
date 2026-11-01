@@ -244,6 +244,24 @@ def test_play_with_offset(tmp_path):
         }
 
 
+def test_play_recovers_via_transfer_on_404(tmp_path):
+    cfg = BardConfig(config_path=tmp_path / "config.json")
+    cfg.access_token = "valid_token"
+    cfg.token_expiry = 9999999999
+    client = SpotifyClient(cfg)
+
+    resp_404 = MagicMock()
+    resp_404.status_code = 404
+    resp_404.json.return_value = {"error": {"status": 404, "message": "Player command failed: No active device found"}}
+
+    with patch("requests.put", return_value=resp_404), \
+         patch.object(client, "transfer_playback", return_value=True) as mock_transfer:
+        success, err = client.play(device_id="dev1")
+        assert success is True
+        assert err == ""
+        mock_transfer.assert_called_with("dev1", play=True)
+
+
 def test_ssl_error_self_healing(tmp_path):
     import requests
     cfg = BardConfig(config_path=tmp_path / "config.json")

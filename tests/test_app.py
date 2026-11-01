@@ -100,5 +100,16 @@ def test_action_toggle_playback_does_not_call_play_without_local_device(tmp_path
     asyncio.run(_run())
 
 
+def test_action_quit_pauses_playback(tmp_path):
+    cfg = BardConfig(config_path=tmp_path / "config.json")
+    mock_client = MagicMock()
+    app = BardApp(cfg, mock_client)
+    app.bard_device_id = "comp_1"
+    
+    app.action_quit()
+    mock_client.pause.assert_called_with(device_id="comp_1")
+
+
+
 
 
