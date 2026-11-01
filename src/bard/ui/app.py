@@ -64,47 +64,64 @@ class BardApp(App):
         """Smooth 1s ticker for progress bar."""
         self.stage_widget.tick_progress(1000)
 
+    def _is_tv_or_remote(self, device: Dict[str, Any]) -> bool:
+        """Check if a device is a TV or remote cast device that must NEVER be targeted."""
+        dev_type = (device.get("type") or "").upper()
+        dev_name = (device.get("name") or "").lower()
+        if dev_type in ("TV", "CASTVIDEO", "AUDIODONGLE"):
+            return True
+        if "tv" in dev_name or "television" in dev_name or "chromecast" in dev_name or "apple tv" in dev_name:
+            return True
+        return False
+
     @work(thread=True)
     def locate_bard_device(self) -> None:
-        """Discover Bard or local PC Spotify Connect device ID and transfer playback to it."""
+        """Discover Bard or local computer Spotify Connect device ID and transfer playback to it."""
         if self.client.is_rate_limited():
             return
         devices = self.client.get_devices()
         local_target = None
+        target_name = None
 
-        # Priority 1: Device named Bard
-        for d in devices:
+        # Filter out ANY TV or remote device immediately
+        valid_devices = [d for d in devices if not self._is_tv_or_remote(d)]
+
+        # Priority 1: Device named Bard (our standalone engine)
+        for d in valid_devices:
             if d.get("name") == self.config.device_name:
                 local_target = d.get("id")
+                target_name = d.get("name")
                 break
 
-        # Priority 2: Computer device (e.g. HOME-PC)
+        # Priority 2: Computer device matching current machine's hostname/node
         if not local_target:
-            for d in devices:
+            import socket
+            import platform
+            local_identifiers = {
+                socket.gethostname().lower(),
+                platform.node().lower(),
+                socket.gethostname().split(".")[0].lower(),
+            }
+            for d in valid_devices:
+                if d.get("type") == "Computer":
+                    name = d.get("name", "").lower()
+                    if any(ident in name or name in ident for ident in local_identifiers if ident):
+                        local_target = d.get("id")
+                        target_name = d.get("name")
+                        break
+
+        # Priority 3: Any local device of type Computer (e.g. desktop Spotify)
+        if not local_target:
+            for d in valid_devices:
                 if d.get("type") == "Computer":
                     local_target = d.get("id")
-                    break
-
-        # Priority 3: Any non-TV active device
-        if not local_target:
-            for d in devices:
-                if d.get("type") != "TV":
-                    local_target = d.get("id")
-                    break
-
-        # Priority 4: Any available device
-        if not local_target and devices:
-            local_target = devices[0].get("id")
-
-        target_name = None
-        if local_target:
-            self.bard_device_id = local_target
-            # Automatically reclaim playback control to this device
-            self.client.transfer_playback(local_target, play=False)
-            for d in devices:
-                if d.get("id") == local_target:
                     target_name = d.get("name")
                     break
+
+        # STRICT ENFORCEMENT: Never target TV or remote devices.
+        if local_target:
+            self.bard_device_id = local_target
+            self.client.transfer_playback(local_target, play=False)
         else:
             self.bard_device_id = None
 
@@ -156,40 +173,33 @@ class BardApp(App):
         if state and state.get("is_playing"):
             self.client.pause(device_id=self.bard_device_id)
         else:
+            if not self.bard_device_id:
+                self.locate_bard_device()
+
+            if not self.bard_device_id:
+                msg = (
+                    "No Spotify player found on this computer!\n"
+                    "Please open Spotify or install librespot on this machine.\n"
+                    "(Never routing audio to TV or remote devices)."
+                )
+                self.call_from_thread(
+                    self.notify,
+                    msg,
+                    title="Local Audio Required",
+                    severity="warning",
+                    timeout=7,
+                )
+                return
+
             success, err_msg = self.client.play(device_id=self.bard_device_id)
             if not success:
-                if self.client.is_rate_limited():
-                    self.call_from_thread(
-                        self.notify,
-                        self.client.get_cooldown_message(),
-                        title="Spotify",
-                        severity="warning",
-                        timeout=6,
-                    )
-                    return
-                self.locate_bard_device()
-                success, err_msg = self.client.play(device_id=self.bard_device_id)
-                if not success:
-                    if "no active device" in (err_msg or "").lower() or not self.bard_device_id:
-                        msg = (
-                            "No active Spotify player found!\n"
-                            "Please open Spotify on your Mac/phone, or install librespot ('brew install librespot') to stream standalone."
-                        )
-                        self.call_from_thread(
-                            self.notify,
-                            msg,
-                            title="Spotify Connect",
-                            severity="warning",
-                            timeout=7,
-                        )
-                    else:
-                        self.call_from_thread(
-                            self.notify,
-                            err_msg or "Could not resume playback. Please pick a playlist from [Tab].",
-                            title="Spotify",
-                            severity="warning",
-                            timeout=5,
-                        )
+                self.call_from_thread(
+                    self.notify,
+                    err_msg or "Could not resume playback. Please pick a playlist from [Tab].",
+                    title="Spotify",
+                    severity="warning",
+                    timeout=5,
+                )
         self.sync_playback_state()
 
     @work(thread=True)
@@ -227,6 +237,21 @@ class BardApp(App):
         """Handle playlist or track selection from drawer."""
         if not self.bard_device_id:
             self.locate_bard_device()
+
+        if not self.bard_device_id:
+            msg = (
+                "No Spotify player found on this computer!\n"
+                "Please open Spotify or install librespot on this machine.\n"
+                "(Never routing audio to TV or remote devices)."
+            )
+            self.call_from_thread(
+                self.notify,
+                msg,
+                title="Local Audio Required",
+                severity="warning",
+                timeout=7,
+            )
+            return
 
         context_uri = play_args.get("context_uri")
         uris = play_args.get("uris") if not context_uri else None

@@ -117,6 +117,21 @@ def run_oauth_flow(config: BardConfig, client: SpotifyClient) -> bool:
     return False
 
 
+def ensure_local_desktop_spotify() -> None:
+    """Silently ensure the local machine has the Spotify desktop app active if installed."""
+    import platform
+    import subprocess
+    sys_name = platform.system()
+    try:
+        if sys_name == "Darwin":  # macOS
+            # -g launches quietly in background without stealing window focus from terminal
+            subprocess.Popen(["open", "-g", "-a", "Spotify"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif sys_name == "Windows":
+            subprocess.Popen(["cmd", "/c", "start", "spotify:"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+
 def main() -> None:
     """Main launcher."""
     config = BardConfig()
@@ -156,10 +171,8 @@ def main() -> None:
             console.print(f"[#A6E3A1 bold]✓ Standalone audio engine ({exe_name}) started in background.[/]")
             time.sleep(1.5)
     else:
-        console.print(
-            "[#FFAF00]Note: Standalone audio engine (librespot) not installed.[/]\n"
-            "[#6C7086]Bard will stream through any active Spotify player (open Spotify on your Mac/PC or install librespot via 'brew install librespot').[/]\n"
-        )
+        # If no standalone daemon installed, silently wake local desktop Spotify if present
+        ensure_local_desktop_spotify()
         time.sleep(1)
 
     # 4. Launch Textual App
