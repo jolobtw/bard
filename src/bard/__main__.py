@@ -147,9 +147,27 @@ def main() -> None:
                 console.print("[#FF4D4D]Authentication failed or timed out. Please try again.[/]")
                 sys.exit(1)
 
-    # 3. Launch Textual App
-    app = BardApp(config, client)
-    app.run()
+    # 3. Audio Engine Background Streaming Daemon
+    engine = AudioEngine(device_name=config.device_name, client_id=config.client_id)
+    if engine.is_installed():
+        if engine.start():
+            import os
+            exe_name = os.path.basename(engine.get_executable_path())
+            console.print(f"[#A6E3A1 bold]✓ Standalone audio engine ({exe_name}) started in background.[/]")
+            time.sleep(1.5)
+    else:
+        console.print(
+            "[#FFAF00]Note: Standalone audio engine (librespot) not installed.[/]\n"
+            "[#6C7086]Bard will stream through any active Spotify player (open Spotify on your Mac/PC or install librespot via 'brew install librespot').[/]\n"
+        )
+        time.sleep(1)
+
+    # 4. Launch Textual App
+    try:
+        app = BardApp(config, client)
+        app.run()
+    finally:
+        engine.stop()
 
 
 if __name__ == "__main__":

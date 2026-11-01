@@ -92,10 +92,23 @@ class BardApp(App):
                     local_target = d.get("id")
                     break
 
+        # Priority 4: Any available device
+        if not local_target and devices:
+            local_target = devices[0].get("id")
+
+        target_name = None
         if local_target:
             self.bard_device_id = local_target
-            # Automatically reclaim playback control to this PC away from TV
+            # Automatically reclaim playback control to this device
             self.client.transfer_playback(local_target, play=False)
+            for d in devices:
+                if d.get("id") == local_target:
+                    target_name = d.get("name")
+                    break
+        else:
+            self.bard_device_id = None
+
+        self.call_from_thread(self.stage_widget.set_device_name, target_name)
 
     @work(thread=True)
     def sync_playback_state(self) -> None:
@@ -157,13 +170,26 @@ class BardApp(App):
                 self.locate_bard_device()
                 success, err_msg = self.client.play(device_id=self.bard_device_id)
                 if not success:
-                    self.call_from_thread(
-                        self.notify,
-                        err_msg or "Could not resume playback. Please pick a playlist from [Tab].",
-                        title="Spotify",
-                        severity="warning",
-                        timeout=5,
-                    )
+                    if "no active device" in (err_msg or "").lower() or not self.bard_device_id:
+                        msg = (
+                            "No active Spotify player found!\n"
+                            "Please open Spotify on your Mac/phone, or install librespot ('brew install librespot') to stream standalone."
+                        )
+                        self.call_from_thread(
+                            self.notify,
+                            msg,
+                            title="Spotify Connect",
+                            severity="warning",
+                            timeout=7,
+                        )
+                    else:
+                        self.call_from_thread(
+                            self.notify,
+                            err_msg or "Could not resume playback. Please pick a playlist from [Tab].",
+                            title="Spotify",
+                            severity="warning",
+                            timeout=5,
+                        )
         self.sync_playback_state()
 
     @work(thread=True)
@@ -221,13 +247,26 @@ class BardApp(App):
             )
 
         if not success:
-            self.call_from_thread(
-                self.notify,
-                f"Playback error: {err_msg}",
-                title="Spotify",
-                severity="warning",
-                timeout=5,
-            )
+            if "no active device" in (err_msg or "").lower() or not self.bard_device_id:
+                msg = (
+                    "No active Spotify player found!\n"
+                    "Please open Spotify on your Mac/phone, or install librespot ('brew install librespot') to stream standalone."
+                )
+                self.call_from_thread(
+                    self.notify,
+                    msg,
+                    title="Spotify Connect",
+                    severity="warning",
+                    timeout=7,
+                )
+            else:
+                self.call_from_thread(
+                    self.notify,
+                    f"Playback error: {err_msg}",
+                    title="Spotify",
+                    severity="warning",
+                    timeout=5,
+                )
         else:
             import time
             time.sleep(0.5)

@@ -37,15 +37,19 @@ class AudioEngine:
         is_win = platform.system() == "Windows"
         self.is_win = is_win
 
-        # Look for spotify_player.exe or librespot.exe
+        # Look for librespot or go-librespot
         if is_win:
-            if (self.bin_dir / "spotify_player.exe").exists():
-                self.binary_name = "spotify_player.exe"
+            if (self.bin_dir / "librespot.exe").exists():
+                self.binary_name = "librespot.exe"
+            elif (self.bin_dir / "go-librespot.exe").exists():
+                self.binary_name = "go-librespot.exe"
             else:
                 self.binary_name = "librespot.exe"
         else:
-            if (self.bin_dir / "spotify_player").exists():
-                self.binary_name = "spotify_player"
+            if (self.bin_dir / "librespot").exists():
+                self.binary_name = "librespot"
+            elif (self.bin_dir / "go-librespot").exists():
+                self.binary_name = "go-librespot"
             else:
                 self.binary_name = "librespot"
 
@@ -57,20 +61,26 @@ class AudioEngine:
         """Check if streaming engine binary exists."""
         if self.binary_path.exists():
             return True
-        return shutil.which("spotify_player") is not None or shutil.which("librespot") is not None
+        for name in ("librespot", "go-librespot", "librespot.exe", "go-librespot.exe"):
+            if (self.bin_dir / name).exists() or shutil.which(name) is not None:
+                return True
+        return False
 
     def get_executable_path(self) -> str:
-        """Return path to executable."""
+        """Return path to executable (local bin or system PATH)."""
         if self.binary_path.exists():
             return str(self.binary_path)
-        for name in ("spotify_player", "librespot"):
-            p = shutil.which(name)
-            if p:
-                return p
+        for name in ("librespot", "go-librespot", "librespot.exe", "go-librespot.exe"):
+            p_local = self.bin_dir / name
+            if p_local.exists():
+                return str(p_local)
+            p_sys = shutil.which(name)
+            if p_sys:
+                return p_sys
         return str(self.binary_path)
 
     def is_spotify_player(self) -> bool:
-        return "spotify_player" in self.binary_name
+        return "spotify_player" in self.binary_name.lower()
 
     def configure_spotify_player(self, client_id: str = "") -> None:
         """Ensure ~/.config/spotify-player/app.toml is configured for Bard."""
@@ -114,6 +124,15 @@ autoplay = false
     def build_launch_args(self) -> List[str]:
         """Construct command arguments for the daemon."""
         exe = self.get_executable_path()
+        basename = os.path.basename(exe).lower()
+        if "go-librespot" in basename:
+            return [
+                exe,
+                "-c",
+                f"device_name={self.device_name}",
+                "-c",
+                f"bitrate={self.bitrate}",
+            ]
         if self.is_spotify_player():
             return [exe, "-d"]
         return [

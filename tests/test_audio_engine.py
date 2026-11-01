@@ -37,3 +37,12 @@ def test_audio_engine_process_lifecycle(tmp_path: Path):
         
         engine.stop()
         mock_proc.terminate.assert_called_once()
+
+
+def test_audio_engine_go_librespot(tmp_path: Path):
+    engine = AudioEngine(bin_dir=tmp_path, device_name="Bard")
+    (tmp_path / "go-librespot").touch()
+    assert engine.is_installed() is True
+    args = engine.build_launch_args()
+    assert any("device_name=Bard" in a for a in args)
+

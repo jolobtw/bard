@@ -116,6 +116,20 @@ class ZenStage(Widget):
         self._current_progress_ms: int = 0
         self._last_art_url: str = ""
         self._cached_art_ansi: str = ""
+        self.device_name: Optional[str] = None
+
+    def set_device_name(self, name: Optional[str]) -> None:
+        """Update active output device name."""
+        self.device_name = name
+        if self.is_mounted and not self.playback_data:
+            try:
+                status_widget = self.query_one("#status-bar", Static)
+                if name:
+                    status_widget.update(f"[#6C7086]Ready to stream • {name}[/]")
+                else:
+                    status_widget.update("[#FFD166]No active Spotify player • Open Spotify or install librespot[/]")
+            except Exception:
+                pass
 
     def compose(self) -> ComposeResult:
         with Center():
@@ -181,7 +195,10 @@ class ZenStage(Widget):
             )
             bar_widget.update("")
             transport_widget.update("[on #262938 #6C7086]  ◄ Prev [P]  [/]     [on #262938 bold #FFD166]   ▶ RESUME    [/]     [on #262938 #6C7086]  Next [N] ►  [/]")
-            status_widget.update("[#6C7086]Ready to stream • Local PC Audio[/]")
+            if self.device_name:
+                status_widget.update(f"[#6C7086]Ready to stream • {self.device_name}[/]")
+            else:
+                status_widget.update("[#FFD166]No active Spotify player • Open Spotify or install librespot[/]")
             hint_widget.update(
                 Text.assemble(
                     (" [Tab] Playlists ", "on #262938 bold #FFD166"),
