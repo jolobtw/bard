@@ -23,6 +23,7 @@ def run_oauth_flow(config: BardConfig, client: SpotifyClient) -> bool:
     verifier, challenge = generate_pkce_pair()
     state = "bard_auth_state"
     auth_code_holder = {"code": None, "error": None}
+    stop_event = threading.Event()
 
     class CallbackHandler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -54,17 +55,59 @@ def run_oauth_flow(config: BardConfig, client: SpotifyClient) -> bool:
         def log_message(self, format, *args):
             pass  # Quiet logging
 
-    server = HTTPServer(("127.0.0.1", 8888), CallbackHandler)
-    server_thread = threading.Thread(target=server.handle_request, daemon=True)
-    server_thread.start()
+    class ReusableHTTPServer(HTTPServer):
+        allow_reuse_address = True
+
+    server = None
+    try:
+        server = ReusableHTTPServer(("127.0.0.1", 8888), CallbackHandler)
+        server.timeout = 0.5
+    except Exception as e:
+        console.print(f"[#FFD166]Note: Could not listen on port 8888 ({e}). Manual URL fallback will be available.[/]")
+
+    def serve():
+        while not stop_event.is_set() and not auth_code_holder["code"] and not auth_code_holder["error"]:
+            if server:
+                server.handle_request()
+
+    if server:
+        server_thread = threading.Thread(target=serve, daemon=True)
+        server_thread.start()
 
     auth_url = client.get_auth_url(challenge, state)
     console.print("\n[#FF7A00 bold]Opening browser for Spotify Authorization...[/]")
     console.print(f"[#6C7086]If it doesn't open automatically, visit:\n{auth_url}[/]\n")
-    webbrowser.open(auth_url)
+    try:
+        webbrowser.open(auth_url)
+    except Exception:
+        pass
 
-    server_thread.join(timeout=60)
-    server.server_close()
+    # Wait up to 60 seconds for auto-redirect or allow manual input
+    start_time = time.time()
+    while time.time() - start_time < 60:
+        if auth_code_holder["code"] or auth_code_holder["error"]:
+            break
+        time.sleep(0.5)
+
+    stop_event.set()
+    if server:
+        try:
+            server.server_close()
+        except Exception:
+            pass
+
+    # Fallback: if auto-redirect did not capture the code, prompt user to paste redirected URL
+    if not auth_code_holder["code"]:
+        console.print("[#FFD166]If your browser opened the callback URL (http://127.0.0.1:8888/callback?code=...) but it didn't complete automatically:[/]")
+        manual_input = console.input("[#FF7A00 bold]Paste the full redirected URL or code from your browser (or press Enter to cancel): [/]").strip()
+        if manual_input:
+            if "code=" in manual_input:
+                from urllib.parse import parse_qs, urlparse
+                query = parse_qs(urlparse(manual_input).query)
+                if "code" in query:
+                    auth_code_holder["code"] = query["code"][0]
+            else:
+                auth_code_holder["code"] = manual_input
 
     if auth_code_holder["code"]:
         success = client.exchange_code_for_token(auth_code_holder["code"], verifier)
