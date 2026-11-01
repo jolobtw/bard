@@ -74,11 +74,23 @@ class BardApp(App):
             return True
         return False
 
-    @work(thread=True)
-    def locate_bard_device(self) -> None:
-        """Discover Bard or local computer Spotify Connect device ID and transfer playback to it."""
+    def _wake_local_spotify(self) -> None:
+        """Attempt to silently launch local desktop Spotify client in background."""
+        import platform
+        import subprocess
+        sys_name = platform.system()
+        try:
+            if sys_name == "Darwin":  # macOS
+                subprocess.Popen(["open", "-g", "-a", "Spotify"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            elif sys_name == "Windows":
+                subprocess.Popen(["cmd", "/c", "start", "spotify:"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+
+    def _scan_and_bind_local_device(self) -> Optional[str]:
+        """Query devices and bind to a local player (Bard daemon or Computer). Never targets TVs."""
         if self.client.is_rate_limited():
-            return
+            return self.bard_device_id
         devices = self.client.get_devices()
         local_target = None
         target_name = None
@@ -125,13 +137,25 @@ class BardApp(App):
         else:
             self.bard_device_id = None
 
-        self.call_from_thread(self.stage_widget.set_device_name, target_name)
+        try:
+            self.call_from_thread(self.stage_widget.set_device_name, target_name)
+        except Exception:
+            pass
+        return local_target
+
+    @work(thread=True)
+    def locate_bard_device(self) -> None:
+        """Background discovery of local Spotify Connect receiver."""
+        self._scan_and_bind_local_device()
 
     @work(thread=True)
     def sync_playback_state(self) -> None:
         """Background sync of playback state from Spotify Web API."""
         if self.client.is_rate_limited():
             return
+        # If we don't have a bound local player yet, keep scanning for one
+        if not self.bard_device_id:
+            self._scan_and_bind_local_device()
         state = self.client.get_playback()
         self.call_from_thread(self._apply_playback_state, state)
 
@@ -174,7 +198,14 @@ class BardApp(App):
             self.client.pause(device_id=self.bard_device_id)
         else:
             if not self.bard_device_id:
-                self.locate_bard_device()
+                self._scan_and_bind_local_device()
+
+            if not self.bard_device_id:
+                # Try waking local Spotify app
+                self._wake_local_spotify()
+                import time
+                time.sleep(1.5)
+                self._scan_and_bind_local_device()
 
             if not self.bard_device_id:
                 msg = (
@@ -236,7 +267,13 @@ class BardApp(App):
     def handle_drawer_play(self, play_args: Dict[str, Any]) -> None:
         """Handle playlist or track selection from drawer."""
         if not self.bard_device_id:
-            self.locate_bard_device()
+            self._scan_and_bind_local_device()
+
+        if not self.bard_device_id:
+            self._wake_local_spotify()
+            import time
+            time.sleep(1.5)
+            self._scan_and_bind_local_device()
 
         if not self.bard_device_id:
             msg = (
