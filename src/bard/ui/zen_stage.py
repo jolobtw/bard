@@ -135,7 +135,12 @@ class ZenStage(Widget):
         if data:
             self._current_progress_ms = data.get("progress_ms", 0)
             art_url = data.get("album_art_url", "")
-            if art_url != self._last_art_url or not self._cached_art_ansi:
+            needs_render = (
+                art_url != self._last_art_url
+                or not self._cached_art_ansi
+                or ("ARCANE RESONANCE" in self._cached_art_ansi and art_url)
+            )
+            if needs_render:
                 self._last_art_url = art_url
                 self._cached_art_ansi = render_album_art(art_url, width=32, height=14)
         self.refresh_stage()

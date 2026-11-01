@@ -34,3 +34,33 @@ def test_render_sigil_art():
     assert "✦" in res or "◈" in res or "◇" in res
     assert "♫" in res or "♪" in res
 
+
+def test_render_album_art_ssl_error_self_healing():
+    import requests
+    from unittest.mock import MagicMock, patch
+
+    img = Image.new("RGB", (4, 4), color=(255, 100, 50))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    img_bytes = buf.getvalue()
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.content = img_bytes
+
+    call_count = 0
+
+    def mock_get(url, *args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if "verify" not in kwargs:
+            raise requests.exceptions.SSLError("certificate verify failed")
+        return mock_resp
+
+    with patch("requests.get", side_effect=mock_get):
+        res = render_album_art("https://i.scdn.co/image/test_art_ssl", width=4, height=2)
+        assert "\u2580" in res
+        assert "ARCANE RESONANCE" not in res
+        assert call_count >= 2
+
+

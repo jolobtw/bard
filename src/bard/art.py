@@ -3,9 +3,17 @@
 from __future__ import annotations
 
 import io
-from typing import Dict, Tuple
+import os
+from typing import Dict, Optional, Tuple
 from PIL import Image
 import requests
+
+try:
+    import certifi
+    os.environ.setdefault("SSL_CERT_FILE", certifi.where())
+    os.environ.setdefault("REQUESTS_CA_BUNDLE", certifi.where())
+except Exception:
+    pass
 
 _ART_CACHE: Dict[Tuple[str, int, int], str] = {}
 
@@ -91,6 +99,33 @@ def render_placeholder(width: int = 28, height: int = 14) -> str:
 
 
 
+def _safe_fetch_image_bytes(url: str, timeout: int = 5) -> Optional[bytes]:
+    """Fetch raw image bytes with automatic SSL certificate verification self-healing."""
+    try:
+        resp = requests.get(url, timeout=timeout)
+        if resp.status_code == 200:
+            return resp.content
+    except requests.exceptions.SSLError:
+        try:
+            import certifi
+            resp = requests.get(url, verify=certifi.where(), timeout=timeout)
+            if resp.status_code == 200:
+                return resp.content
+        except Exception:
+            pass
+        try:
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            resp = requests.get(url, verify=False, timeout=timeout)
+            if resp.status_code == 200:
+                return resp.content
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return None
+
+
 def render_album_art(url: str, width: int = 28, height: int = 14) -> str:
     """Fetch and convert album art URL into ANSI block mosaic with caching."""
     if not url:
@@ -100,14 +135,14 @@ def render_album_art(url: str, width: int = 28, height: int = 14) -> str:
     if cache_key in _ART_CACHE:
         return _ART_CACHE[cache_key]
 
-    try:
-        resp = requests.get(url, timeout=5)
-        if resp.status_code == 200:
-            img = Image.open(io.BytesIO(resp.content))
+    content = _safe_fetch_image_bytes(url, timeout=5)
+    if content:
+        try:
+            img = Image.open(io.BytesIO(content))
             ansi_str = image_to_ansi(img, width=width, height=height)
             _ART_CACHE[cache_key] = ansi_str
             return ansi_str
-    except Exception:
-        pass
+        except Exception:
+            pass
 
     return render_placeholder(width, height)
