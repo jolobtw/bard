@@ -32,9 +32,31 @@ def test_zen_stage_empty_state_rendering():
             stage = app.query_one(ZenStage)
             stage.refresh_stage()
             title = stage.query_one("#track-title", Static)
-            assert "STAGE IS SILENT" in str(title.render())
+            assert "Select Music" in str(title.render())
+            art_center = stage.query_one("#art-center")
+            assert art_center.display is False
             art = stage.query_one("#art-box", Static)
-            assert "ARCANE" in str(art.render()) or "✦" in str(art.render()) or "◈" in str(art.render())
+            assert str(art.render()) == ""
+
+            # Verify transition to playing state displays art and title
+            stage.update_playback({
+                "title": "Arcane Echoes",
+                "artist": "Vi & Jinx",
+                "album": "Piltover Nights",
+                "duration_ms": 180000,
+                "progress_ms": 30000,
+                "is_playing": True,
+                "album_art_url": "",
+                "volume": 75,
+                "device_name": "Studio Monitors",
+            })
+            assert art_center.display is True
+            assert "Arcane Echoes" in str(title.render())
+
+            # Transition back to empty state
+            stage.update_playback(None)
+            assert art_center.display is False
+            assert "Select Music" in str(title.render())
 
     asyncio.run(_test())
 

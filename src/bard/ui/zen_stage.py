@@ -9,6 +9,7 @@ from textual.containers import Center, Vertical
 from textual.widget import Widget
 from textual.widgets import Static
 
+from bard.arcane_theme import load_theme, render_rich_gradient
 from bard.art import render_album_art
 
 
@@ -173,6 +174,7 @@ class ZenStage(Widget):
         if not self.is_mounted:
             return
 
+        art_center = self.query_one("#art-center")
         art_widget = self.query_one("#art-box", Static)
         title_widget = self.query_one("#track-title", Static)
         meta_widget = self.query_one("#track-meta", Static)
@@ -182,8 +184,13 @@ class ZenStage(Widget):
         hint_widget = self.query_one("#controls-hint", Static)
 
         if not self.playback_data:
-            art_widget.update(Text.from_ansi(render_album_art("", width=32, height=12)))
-            title_widget.update("[bold #FF7A00]THE STAGE IS SILENT[/]")
+            art_center.display = False
+            art_widget.update("")
+            theme = load_theme()
+            palette = theme.get("palette", {})
+            start_color = palette.get("gradient_start", "#FF4500")
+            end_color = palette.get("gradient_end", "#FFD166")
+            title_widget.update(render_rich_gradient("Select Music", start_color, end_color))
             meta_widget.update(
                 Text.assemble(
                     ("Summon your library with ", "#A6ADC8"),
@@ -210,6 +217,7 @@ class ZenStage(Widget):
             )
             return
 
+        art_center.display = True
         art_widget.update(Text.from_ansi(self._cached_art_ansi))
         title = self.playback_data.get("title", "Unknown")
         artist = self.playback_data.get("artist", "Unknown Artist")
