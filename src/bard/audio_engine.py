@@ -1,14 +1,17 @@
-"""Audio Engine supervisor for standalone Spotify streaming daemon (librespot / spotify_player)."""
+"""Audio Engine supervisor for standalone Spotify streaming daemon (librespot / go-librespot)."""
 
 from __future__ import annotations
 
 import atexit
+import json
 import os
 import platform
+import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Callable, List, Optional
 
 from bard.config import get_default_config_dir
 
@@ -79,8 +82,57 @@ class AudioEngine:
                 return p_sys
         return str(self.binary_path)
 
+    def is_go_librespot(self) -> bool:
+        """Check if the resolved streaming engine is go-librespot."""
+        exe = self.get_executable_path()
+        return "go-librespot" in os.path.basename(exe).lower()
+
     def is_spotify_player(self) -> bool:
         return "spotify_player" in self.binary_name.lower()
+
+    def get_state_file(self) -> Path:
+        """Return path to go-librespot state.json."""
+        if self.is_win:
+            appdata = os.environ.get("APPDATA")
+            base = Path(appdata) if appdata else (Path.home() / "AppData" / "Roaming")
+            return base / "go-librespot" / "state.json"
+        elif platform.system() == "Darwin":
+            return Path.home() / "Library" / "Application Support" / "go-librespot" / "state.json"
+        else:
+            return Path.home() / ".config" / "go-librespot" / "state.json"
+
+    def ensure_windows_dependencies(self) -> bool:
+        """Verify and restore MinGW runtime DLLs required by go-librespot on Windows."""
+        if not self.is_win or not self.is_go_librespot():
+            return True
+
+        required_dlls = [
+            "libFLAC.dll",
+            "libmpg123-0.dll",
+            "libogg-0.dll",
+            "libvorbis-0.dll",
+            "libvorbisenc-2.dll",
+            "libwinpthread-1.dll",
+        ]
+        missing = [dll for dll in required_dlls if not (self.bin_dir / dll).exists()]
+        if not missing:
+            return True
+
+        # Attempt to copy missing runtime DLLs from Git for Windows if available
+        git_mingw = Path(r"C:\Program Files\Git\mingw64\bin")
+        if git_mingw.exists():
+            for dll_name in ["libwinpthread-1.dll", "libgcc_s_seh-1.dll", "libstdc++-6.dll"]:
+                src = git_mingw / dll_name
+                dst = self.bin_dir / dll_name
+                if src.exists() and not dst.exists():
+                    try:
+                        shutil.copy2(src, dst)
+                    except Exception:
+                        pass
+
+        # Check again
+        still_missing = [dll for dll in required_dlls if not (self.bin_dir / dll).exists()]
+        return len(still_missing) == 0
 
     def configure_spotify_player(self, client_id: str = "") -> None:
         """Ensure ~/.config/spotify-player/app.toml is configured for Bard."""
@@ -107,19 +159,123 @@ autoplay = false
         if self.is_spotify_player():
             cred = Path.home() / ".cache" / "spotify-player" / "credentials.json"
             return cred.exists()
-        return False
 
-    def authenticate(self) -> bool:
-        """Run interactive authentication for the streaming engine."""
-        if not self.is_spotify_player():
-            return True
-        exe = self.get_executable_path()
-        try:
-            # Run authenticate in foreground so user sees browser prompt
-            proc = subprocess.run([exe, "authenticate"])
-            return proc.returncode == 0
-        except Exception:
+        if self.is_go_librespot():
+            state_file = self.get_state_file()
+            if state_file.exists():
+                try:
+                    with open(state_file, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    creds = data.get("credentials") or {}
+                    if creds.get("username") and creds.get("data"):
+                        return True
+                except Exception:
+                    pass
             return False
+
+        # Native Rust librespot manages tokens in cache or via OAuth flags
+        return True
+
+    def authenticate(self, on_pair_url: Optional[Callable[[str, str], None]] = None) -> bool:
+        """Run interactive authentication for the streaming engine."""
+        if self.is_spotify_player():
+            exe = self.get_executable_path()
+            try:
+                proc = subprocess.run([exe, "authenticate"])
+                return proc.returncode == 0
+            except Exception:
+                return False
+
+        if self.is_go_librespot():
+            self.ensure_windows_dependencies()
+            exe = self.get_executable_path()
+            state_file = self.get_state_file()
+            lockfile = state_file.parent / "lockfile"
+            if lockfile.exists():
+                try:
+                    lockfile.unlink()
+                except Exception:
+                    pass
+
+            args = [
+                exe,
+                "-c",
+                f"device_name={self.device_name}",
+                "-c",
+                "credentials.type=device_auth",
+                "-c",
+                "log_level=info",
+            ]
+
+            creationflags = 0
+            if self.is_win:
+                creationflags = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0x08000000
+
+            try:
+                proc = subprocess.Popen(
+                    args,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                    creationflags=creationflags,
+                )
+            except Exception:
+                return False
+
+            url_found = False
+            start_time = time.time()
+
+            try:
+                while time.time() - start_time < 90:
+                    if proc.poll() is not None:
+                        break
+                    line = proc.stdout.readline() if proc.stdout else ""
+                    if line:
+                        match = re.search(r"(https://spotify\.com/pair\?code=([A-Z0-9]+))", line)
+                        if match and not url_found:
+                            pair_url = match.group(1)
+                            code = match.group(2)
+                            url_found = True
+                            if on_pair_url:
+                                on_pair_url(pair_url, code)
+                            else:
+                                import webbrowser
+                                webbrowser.open(pair_url)
+
+                    if self.has_credentials():
+                        time.sleep(1)
+                        try:
+                            proc.terminate()
+                            proc.wait(timeout=2)
+                        except Exception:
+                            pass
+                        if lockfile.exists():
+                            try:
+                                lockfile.unlink()
+                            except Exception:
+                                pass
+                        return True
+                    time.sleep(0.2)
+            finally:
+                if proc.poll() is None:
+                    try:
+                        proc.terminate()
+                        proc.wait(timeout=2)
+                    except Exception:
+                        try:
+                            proc.kill()
+                        except Exception:
+                            pass
+                if lockfile.exists():
+                    try:
+                        lockfile.unlink()
+                    except Exception:
+                        pass
+
+            return self.has_credentials()
+
+        return True
 
     def build_launch_args(self) -> List[str]:
         """Construct command arguments for the daemon."""
@@ -132,6 +288,8 @@ autoplay = false
                 f"device_name={self.device_name}",
                 "-c",
                 f"bitrate={self.bitrate}",
+                "-c",
+                "credentials.type=device_auth",
             ]
         if self.is_spotify_player():
             return [exe, "-d"]
@@ -159,6 +317,16 @@ autoplay = false
         if self.is_spotify_player() and not self.has_credentials():
             return False
 
+        if self.is_go_librespot():
+            self.ensure_windows_dependencies()
+            state_file = self.get_state_file()
+            lockfile = state_file.parent / "lockfile"
+            if lockfile.exists():
+                try:
+                    lockfile.unlink()
+                except Exception:
+                    pass
+
         args = self.build_launch_args()
         try:
             creationflags = 0
@@ -171,6 +339,11 @@ autoplay = false
                 stderr=subprocess.DEVNULL,
                 creationflags=creationflags,
             )
+            # Give daemon a moment to initialize and ensure it didn't exit on launch
+            time.sleep(0.4)
+            if self._process.poll() is not None:
+                self._process = None
+                return False
             return True
         except Exception:
             self._process = None

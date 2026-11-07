@@ -165,11 +165,38 @@ def main() -> None:
     # 3. Audio Engine Background Streaming Daemon
     engine = AudioEngine(device_name=config.device_name, client_id=config.client_id)
     if engine.is_installed():
+        if not engine.has_credentials():
+            console.print("\n[#FF7A00 bold]✦ Standalone Audio Engine Pairing ✦[/]")
+            console.print("[#A6ADC8]To stream music directly in your terminal without any Spotify app open,\nBard needs a one-time link with your Spotify account.[/]\n")
+
+            def show_pair_info(url: str, code: str):
+                msg = (
+                    f"[#FFFFFF bold]Pairing Code:[/] [#FFD166 bold]{code}[/]\n\n"
+                    f"[#A6ADC8]Opening browser to:[/] [#FF7A00 underline]{url}[/]\n"
+                    f"[#6C7086]If it doesn't open automatically, visit the URL above to approve.[/]"
+                )
+                console.print(Panel(msg, border_style="#FF7A00", title="✦ SPOTIFY CONNECT PAIRING ✦"))
+                try:
+                    webbrowser.open(url)
+                except Exception:
+                    pass
+
+            console.print("[#6C7086]Waiting for one-time Spotify pairing approval...[/]")
+            ok = engine.authenticate(on_pair_url=show_pair_info)
+            if ok:
+                console.print("[#A6E3A1 bold]✓ Successfully paired standalone player with Spotify![/]\n")
+            else:
+                console.print("[#FFD166]Pairing failed or timed out. Continuing with any available Spotify player...[/]\n")
+
         if engine.start():
             import os
             exe_name = os.path.basename(engine.get_executable_path())
             console.print(f"[#A6E3A1 bold]✓ Standalone audio engine ({exe_name}) started in background.[/]")
-            time.sleep(1.5)
+            time.sleep(2)
+        else:
+            console.print("[#FFD166]Warning: Standalone audio engine could not be started in background.[/]")
+            ensure_local_desktop_spotify()
+            time.sleep(1)
     else:
         # If no standalone daemon installed, silently wake local desktop Spotify if present
         ensure_local_desktop_spotify()

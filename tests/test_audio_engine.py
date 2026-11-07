@@ -45,4 +45,65 @@ def test_audio_engine_go_librespot(tmp_path: Path):
     assert engine.is_installed() is True
     args = engine.build_launch_args()
     assert any("device_name=Bard" in a for a in args)
+    assert any("credentials.type=device_auth" in a for a in args)
+
+
+def test_audio_engine_go_librespot_credentials(tmp_path: Path):
+    engine = AudioEngine(bin_dir=tmp_path, device_name="Bard")
+    (tmp_path / "go-librespot").touch()
+    state_file = tmp_path / "state.json"
+    
+    with patch.object(engine, "get_state_file", return_value=state_file):
+        # State file missing
+        assert engine.has_credentials() is False
+
+        # State file with empty credentials
+        state_file.write_text('{"credentials": {"username": "", "data": null}}', encoding="utf-8")
+        assert engine.has_credentials() is False
+
+        # State file with valid credentials
+        state_file.write_text('{"credentials": {"username": "tester", "data": "base64blob"}}', encoding="utf-8")
+        assert engine.has_credentials() is True
+
+
+def test_audio_engine_start_detects_immediate_crash(tmp_path: Path):
+    engine = AudioEngine(bin_dir=tmp_path)
+    (tmp_path / engine.binary_name).touch()
+    
+    mock_proc = MagicMock()
+    mock_proc.poll.return_value = 1  # Exited immediately with error
+    
+    with patch("subprocess.Popen", return_value=mock_proc):
+        success = engine.start()
+        assert success is False
+        assert engine.is_running() is False
+
+
+def test_audio_engine_authenticate_device_auth_captures_url(tmp_path: Path):
+    engine = AudioEngine(bin_dir=tmp_path, device_name="Bard")
+    (tmp_path / "go-librespot").touch()
+    state_file = tmp_path / "state.json"
+    
+    mock_proc = MagicMock()
+    mock_proc.poll.side_effect = [None, None, None, 0]
+    mock_proc.stdout.readline.side_effect = [
+        'time="2026-11-07T14:00:00" level=info msg="running go-librespot"\n',
+        'time="2026-11-07T14:00:01" level=info msg="to complete authentication visit https://spotify.com/pair?code=ABC123 and, if prompted, enter code ABC123"\n',
+        "",
+    ]
+    
+    captured = []
+    def callback(url: str, code: str):
+        captured.append((url, code))
+        # Simulate browser pairing writing credentials
+        state_file.write_text('{"credentials": {"username": "user", "data": "authdata"}}', encoding="utf-8")
+
+    with patch.object(engine, "get_state_file", return_value=state_file), \
+         patch("subprocess.Popen", return_value=mock_proc):
+        state_file.write_text('{"credentials": {"username": "", "data": null}}', encoding="utf-8")
+        result = engine.authenticate(on_pair_url=callback)
+        assert len(captured) == 1
+        assert captured[0] == ("https://spotify.com/pair?code=ABC123", "ABC123")
+        assert result is True
+
 

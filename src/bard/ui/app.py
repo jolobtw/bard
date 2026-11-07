@@ -217,10 +217,11 @@ class BardApp(App):
                 self._scan_and_bind_local_device()
 
             if not self.bard_device_id:
+                hint = "Install librespot ('brew install librespot')" if platform.system() == "Darwin" else "Check that Bard's audio engine is running"
                 msg = (
-                    "No Spotify player found on this computer!\n"
-                    "Please open Spotify or install librespot on this machine.\n"
-                    "(Never routing audio to TV or remote devices)."
+                    f"No Spotify player found on this computer!\n"
+                    f"{hint} or open Spotify.\n"
+                    f"(Never routing audio to TV or remote devices)."
                 )
                 self.call_from_thread(
                     self.notify,
@@ -290,10 +291,11 @@ class BardApp(App):
             self._scan_and_bind_local_device()
 
         if not self.bard_device_id:
+            hint = "Install librespot ('brew install librespot')" if platform.system() == "Darwin" else "Check that Bard's audio engine is running"
             msg = (
-                "No Spotify player found on this computer!\n"
-                "Please open Spotify or install librespot on this machine.\n"
-                "(Never routing audio to TV or remote devices)."
+                f"No Spotify player found on this computer!\n"
+                f"{hint} or open Spotify.\n"
+                f"(Never routing audio to TV or remote devices)."
             )
             self.call_from_thread(
                 self.notify,
@@ -324,9 +326,10 @@ class BardApp(App):
 
         if not success:
             if "no active device" in (err_msg or "").lower() or not self.bard_device_id:
+                hint = "('brew install librespot')" if platform.system() == "Darwin" else "via Bard's audio engine"
                 msg = (
-                    "No active Spotify player found!\n"
-                    "Please open Spotify on your Mac/phone, or install librespot ('brew install librespot') to stream standalone."
+                    f"No active Spotify player found!\n"
+                    f"Please open Spotify on this machine, or enable standalone playback {hint}."
                 )
                 self.call_from_thread(
                     self.notify,
