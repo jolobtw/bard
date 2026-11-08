@@ -156,6 +156,7 @@ class CurtainDrawer(Widget):
         self.tracks: List[Track] = []
         self._cache: Dict[str, List[Track]] = {}
         self._current_cat_idx: int = 0
+        self._active_query: Optional[str] = None
 
     @property
     def playlists(self) -> List[Dict[str, Any]]:
@@ -335,6 +336,8 @@ class CurtainDrawer(Widget):
         self._current_cat_idx = index
         cat = self.categories[index]
         cat_id = cat["id"]
+        if cat_id != "search":
+            self._active_query = None
 
         if cat_id == "search":
             self.open_search()
@@ -371,6 +374,7 @@ class CurtainDrawer(Widget):
 
     def load_tracks_for_search(self, query: str) -> None:
         """Search tracks with user query and populate tracklist."""
+        self._active_query = query
         cache_key = f"search:{query}"
         if cache_key in self._cache:
             self._populate_tracks(cache_key, self._cache[cache_key])
@@ -414,8 +418,21 @@ class CurtainDrawer(Widget):
         else:
             self._populate_tracks(cache_key, tracks)
 
+    def _matches_active_selection(self, expected_key: str) -> bool:
+        """Verify whether expected_key matches the currently active category or search query."""
+        if not (0 <= self._current_cat_idx < len(self.categories)):
+            return False
+        active_cat_id = self.categories[self._current_cat_idx]["id"]
+        if active_cat_id == "search":
+            if self._active_query:
+                return expected_key == f"search:{self._active_query}" or expected_key == "search"
+            return expected_key == "search" or expected_key.startswith("search:")
+        return expected_key == active_cat_id
+
     def _populate_tracks(self, expected_key: str, tracks: List[Track]) -> None:
         """Populate track results into the right OptionList."""
+        if not self._matches_active_selection(expected_key):
+            return
         self.tracks = tracks
         try:
             tlist = self.query_one("#track-list", OptionList)
@@ -456,7 +473,7 @@ class CurtainDrawer(Widget):
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         """Handle Enter key on category or track."""
         if event.option_list.id in ("category-list", "playlist-list") and event.option_index is not None:
-            if event.option_index == 4:
+            if 0 <= event.option_index < len(self.categories) and self.categories[event.option_index]["id"] == "search":
                 self.open_search()
             else:
                 tlist = self.query_one("#track-list", OptionList)

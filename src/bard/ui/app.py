@@ -65,6 +65,7 @@ class BardApp(App):
         self._had_started: bool = False
         self._last_known_pos: float = 0.0
         self._last_known_dur: float = 0.0
+        self._user_paused: bool = False
 
     def compose(self) -> ComposeResult:
         yield self.header_widget
@@ -94,6 +95,7 @@ class BardApp(App):
 
             if is_playing:
                 self._had_started = True
+                self._user_paused = False
                 if dur > 0:
                     self._last_known_pos = pos
                     self._last_known_dur = dur
@@ -107,7 +109,8 @@ class BardApp(App):
             else:
                 # If playback was active and stopped near end of track, auto-advance
                 if (
-                    self._had_started
+                    not self._user_paused
+                    and self._had_started
                     and self._last_known_dur > 0
                     and self._last_known_pos >= max(1.0, self._last_known_dur - 3.0)
                 ):
@@ -240,6 +243,7 @@ class BardApp(App):
                 return
 
         self._had_started = True
+        self._user_paused = False
         self._last_known_pos = 0.0
         self._last_known_dur = float(track.duration_seconds or 0)
 
@@ -267,11 +271,13 @@ class BardApp(App):
             try:
                 if self.player.is_playing():
                     self.player.pause()
+                    self._user_paused = True
                     if self.stage_widget.playback_data:
                         self.stage_widget.playback_data["is_playing"] = False
                     self.header_widget.update_status(is_playing=False, device_name="YouTube Music")
                     self.stage_widget.refresh_stage()
                 else:
+                    self._user_paused = False
                     if self.current_track or (
                         self.stage_widget.playback_data and self.stage_widget.playback_data.get("title")
                     ):
@@ -313,6 +319,7 @@ class BardApp(App):
 
     def action_prev_track(self) -> None:
         """Previous track in queue or restart current track."""
+        pos = 0.0
         if self.player:
             try:
                 pos = self.player.get_position()
@@ -330,7 +337,11 @@ class BardApp(App):
             self.play_track_at_index(self.current_index - 1)
         elif self.player:
             try:
-                self.player.seek(0)
+                self.player.seek(-pos)
+                if self.stage_widget.playback_data:
+                    self.stage_widget.playback_data["progress_ms"] = 0
+                    self.stage_widget._current_progress_ms = 0
+                    self.stage_widget.refresh_stage()
             except Exception:
                 pass
 

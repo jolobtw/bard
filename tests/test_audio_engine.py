@@ -127,4 +127,21 @@ def test_audio_engine_find_mpv_system_path(tmp_path: Path):
         assert found == "/mock/path/mpv"
 
 
+def test_audio_engine_find_mpv_local_priority_across_candidates(tmp_path: Path):
+    """Verify local bin directory is checked for all candidates before system PATH."""
+    local_target = tmp_path / ("mpv.exe" if platform.system() == "Windows" else "mpv")
+    local_target.touch()
+
+    def mock_which(name: str):
+        if name == "mpv.com":
+            return "/system/path/mpv.com"
+        return None
+
+    with patch("shutil.which", side_effect=mock_which):
+        found = AudioEngine.find_mpv(bin_dir=tmp_path)
+        # Must return the local file, not the system PATH match from earlier candidate
+        assert found == str(local_target)
+
+
+
 

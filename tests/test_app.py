@@ -145,6 +145,23 @@ def test_action_prev_track_restarts_if_deep_in_track(tmp_path):
     assert app.current_index == 1  # Did not decrement index
 
 
+def test_action_prev_track_at_index_zero_rewinds_beginning(tmp_path):
+    cfg = BardConfig(config_path=tmp_path / "config.json")
+    mock_client = MagicMock()
+    mock_player = MagicMock()
+    mock_player.get_position.return_value = 2.0  # <= 3.0 seconds
+
+    app = BardApp(cfg, mock_client, player=mock_player)
+    app.queue = [Track("1", "T1", "A1", "Alb", 120, "")]
+    app.current_index = 0
+    app.stage_widget.playback_data = {"progress_ms": 2000}
+
+    app.action_prev_track()
+    # Should seek -pos (-2.0) to reset to 0:00 rather than seek(0)
+    mock_player.seek.assert_called_with(-2.0)
+    assert app.stage_widget.playback_data["progress_ms"] == 0
+
+
 def test_action_volume_up_and_down(tmp_path):
     cfg = BardConfig(config_path=tmp_path / "config.json")
     mock_client = MagicMock()
@@ -223,5 +240,45 @@ def test_on_progress_tick_auto_advances_on_completion(tmp_path):
             # Auto-advanced to next track
             assert app.current_index == 1
             assert app.current_track == t2
+
+    asyncio.run(_run())
+
+
+def test_on_progress_tick_does_not_advance_when_user_paused(tmp_path):
+    async def _run():
+        cfg = BardConfig(config_path=tmp_path / "config.json")
+        mock_client = MagicMock()
+        mock_player = MagicMock()
+
+        app = BardApp(cfg, mock_client, player=mock_player)
+        t1 = Track("1", "T1", "A", "Alb", 180, "")
+        t2 = Track("2", "T2", "A", "Alb", 200, "")
+        app.queue = [t1, t2]
+        app.current_index = 0
+        app.current_track = t1
+
+        # Track had started and position is near the end
+        app._had_started = True
+        app._last_known_pos = 179.0
+        app._last_known_dur = 180.0
+
+        # User deliberately paused playback
+        mock_player.is_playing.return_value = True
+        app.action_toggle_playback()
+        assert app._user_paused is True
+        mock_player.is_playing.return_value = False
+
+        async with app.run_test():
+            app.on_progress_tick()
+            await asyncio.sleep(0.1)
+
+            # Must NOT advance to next track because user paused
+            assert app.current_index == 0
+            assert app.current_track == t1
+
+            # Resume playback
+            mock_player.is_playing.return_value = False
+            app.action_toggle_playback()
+            assert app._user_paused is False
 
     asyncio.run(_run())

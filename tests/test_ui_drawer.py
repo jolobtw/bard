@@ -260,3 +260,68 @@ def test_drawer_backward_compatibility_selectors_and_properties():
 
     asyncio.run(_test())
 
+
+def test_drawer_populate_tracks_race_condition_protection():
+    """Verify _populate_tracks ignores results that do not match active category or search query."""
+    mock_client = MagicMock()
+    drawer = CurtainDrawer(client=mock_client)
+    # Default category index 0 is "trending"
+    drawer._current_cat_idx = 0
+
+    stale_tracks = [Track(id="s", title="Stale", artist="A", album="", duration_seconds=100, thumbnail_url="")]
+    valid_tracks = [Track(id="v", title="Valid", artist="A", album="", duration_seconds=100, thumbnail_url="")]
+
+    # Stale category response (e.g. from arcane) is ignored
+    drawer._populate_tracks("arcane", stale_tracks)
+    assert drawer.tracks == []
+
+    # Matching category response is accepted
+    drawer._populate_tracks("trending", valid_tracks)
+    assert drawer.tracks == valid_tracks
+
+    # Now simulate active search category
+    drawer.select_category(4)  # "search" category
+    drawer._active_query = "synthwave"
+
+    search_stale = [Track(id="old", title="Old Search", artist="A", album="", duration_seconds=100, thumbnail_url="")]
+    search_valid = [Track(id="new", title="New Search", artist="A", album="", duration_seconds=100, thumbnail_url="")]
+
+    # Stale search query is ignored
+    drawer._populate_tracks("search:lofi", search_stale)
+    assert drawer.tracks == valid_tracks  # Not updated to search_stale
+
+    # Active search query is accepted
+    drawer._populate_tracks("search:synthwave", search_valid)
+    assert drawer.tracks == search_valid
+
+
+def test_drawer_search_category_selection_by_id():
+    """Verify search is opened by category id matching 'search', not hardcoded index 4."""
+    mock_client = MagicMock()
+    drawer = CurtainDrawer(client=mock_client)
+    # Rearrange categories so "search" is at index 0
+    drawer.categories = [
+        {"id": "search", "name": "🔍 Search Tracks...", "query": ""},
+        {"id": "trending", "name": "🔥 Trending Hits", "query": None},
+    ]
+
+    class TestApp(App):
+        def compose(self) -> ComposeResult:
+            yield drawer
+
+    async def _test():
+        app = TestApp()
+        async with app.run_test():
+            drawer.toggle()
+            await asyncio.sleep(0.05)
+
+            clist = drawer.query_one("#category-list", OptionList)
+            # Select index 0 (which is now "search")
+            drawer.on_option_list_option_selected(OptionList.OptionSelected(clist, clist.get_option_at_index(0), 0))
+            await asyncio.sleep(0.05)
+
+            search_input = drawer.query_one("#search-input", Input)
+            assert search_input.has_class("-visible")
+
+    asyncio.run(_test())
+

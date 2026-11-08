@@ -38,7 +38,8 @@ def ensure_audio_engine() -> bool:
 def main() -> None:
     """Main launcher."""
     config = BardConfig()
-    ensure_audio_engine()
+    if not ensure_audio_engine():
+        sys.exit(1)
 
     client = YTMusicClient()
     player = AudioPlayer()

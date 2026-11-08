@@ -75,6 +75,7 @@ class AudioEngine:
             local = base_dir / name
             if local.exists():
                 return str(local)
+        for name in candidates:
             sys_path = shutil.which(name)
             if sys_path:
                 return sys_path
