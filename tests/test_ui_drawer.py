@@ -36,7 +36,7 @@ def test_drawer_categories_list():
     assert "⚡ Arcane & Cyberpunk" in category_names
     assert "☕ Lo-Fi Beats" in category_names
     assert "🌌 Synthwave Chill" in category_names
-    assert "🔍 Search Tracks..." in category_names
+    assert ("🔍 Search Music..." in category_names or "🔍 Search Tracks..." in category_names)
 
 
 def test_drawer_loads_trending_on_open():
@@ -326,4 +326,273 @@ def test_drawer_search_category_selection_by_id():
             assert search_input.has_class("-visible")
 
     asyncio.run(_test())
+
+
+def test_drawer_library_categories_when_authenticated():
+    """Verify authenticated user gets personal library categories and disconnect action."""
+    mock_client = MagicMock()
+    mock_client.is_authenticated.return_value = True
+    drawer = CurtainDrawer(client=mock_client)
+    category_ids = [c["id"] for c in drawer.categories]
+    assert "liked" in category_ids
+    assert "library_playlists" in category_ids
+    assert "history" in category_ids
+    assert "disconnect_account" in category_ids
+    assert "connect_account" not in category_ids
+
+
+def test_drawer_library_categories_when_unauthenticated():
+    """Verify unauthenticated user gets curated feeds and connect action without library categories."""
+    mock_client = MagicMock()
+    mock_client.is_authenticated.return_value = False
+    drawer = CurtainDrawer(client=mock_client)
+    category_ids = [c["id"] for c in drawer.categories]
+    assert "liked" not in category_ids
+    assert "library_playlists" not in category_ids
+    assert "history" not in category_ids
+    assert "connect_account" in category_ids
+    assert "disconnect_account" not in category_ids
+    assert "trending" in category_ids
+
+
+def test_drawer_refresh_categories():
+    """Verify refresh_categories rebuilds category list upon auth change."""
+    mock_client = MagicMock()
+    mock_client.is_authenticated.return_value = False
+    drawer = CurtainDrawer(client=mock_client)
+    assert "connect_account" in [c["id"] for c in drawer.categories]
+
+    mock_client.is_authenticated.return_value = True
+    drawer.refresh_categories()
+    assert "liked" in [c["id"] for c in drawer.categories]
+    assert "disconnect_account" in [c["id"] for c in drawer.categories]
+
+
+def test_drawer_account_callbacks():
+    """Verify on_connect_account and on_disconnect_account callbacks are invoked on selection."""
+    mock_client = MagicMock()
+    mock_client.is_authenticated.return_value = False
+    on_connect = MagicMock()
+    on_disconnect = MagicMock()
+
+    drawer = CurtainDrawer(
+        client=mock_client,
+        on_connect_account=on_connect,
+        on_disconnect_account=on_disconnect,
+    )
+
+    class TestApp(App):
+        def compose(self) -> ComposeResult:
+            yield drawer
+
+    async def _test():
+        app = TestApp()
+        async with app.run_test():
+            drawer.toggle()
+            await asyncio.sleep(0.05)
+            clist = drawer.query_one("#category-list", OptionList)
+            # Find connect_account index
+            conn_idx = [i for i, c in enumerate(drawer.categories) if c["id"] == "connect_account"][0]
+            drawer.on_option_list_option_selected(
+                OptionList.OptionSelected(clist, clist.get_option_at_index(conn_idx), conn_idx)
+            )
+            on_connect.assert_called_once()
+
+            # Now simulate authenticated
+            mock_client.is_authenticated.return_value = True
+            drawer.refresh_categories()
+            await asyncio.sleep(0.05)
+            disc_idx = [i for i, c in enumerate(drawer.categories) if c["id"] == "disconnect_account"][0]
+            drawer.on_option_list_option_selected(
+                OptionList.OptionSelected(clist, clist.get_option_at_index(disc_idx), disc_idx)
+            )
+            on_disconnect.assert_called_once()
+
+    asyncio.run(_test())
+
+
+def test_drawer_drill_down_playlist_and_back_navigation():
+    """Verify selecting a library playlist drills down into its tracks and back button restores playlists."""
+    mock_client = MagicMock()
+    mock_client.is_authenticated.return_value = True
+    mock_client.get_library_playlists.return_value = [
+        {"id": "PL_1", "title": "Synth Hits", "count": "15", "thumbnail_url": ""},
+        {"id": "PL_2", "title": "Arcane Mix", "count": "8", "thumbnail_url": ""},
+    ]
+    mock_client.get_playlist_tracks.return_value = [
+        Track(id="t_pl1", title="Guns for Hire", artist="Woodkid", album="Arcane", duration_seconds=226, thumbnail_url=""),
+        Track(id="t_pl2", title="Playground", artist="Bea Miller", album="Arcane", duration_seconds=230, thumbnail_url=""),
+    ]
+    mock_play = MagicMock()
+
+    class TestApp(App):
+        def compose(self) -> ComposeResult:
+            yield CurtainDrawer(client=mock_client, on_play=mock_play)
+
+    async def _test():
+        app = TestApp()
+        async with app.run_test():
+            drawer = app.query_one(CurtainDrawer)
+            drawer.toggle()
+            await asyncio.sleep(0.05)
+
+            # Select library_playlists category
+            pl_cat_idx = [i for i, c in enumerate(drawer.categories) if c["id"] == "library_playlists"][0]
+            drawer.select_category(pl_cat_idx)
+            await asyncio.sleep(0.1)
+
+            mock_client.get_library_playlists.assert_called()
+            tlist = drawer.query_one("#track-list", OptionList)
+            assert tlist.option_count == 2
+            assert "Synth Hits" in str(tlist.get_option_at_index(0).prompt)
+
+            # Click second playlist (Arcane Mix) -> drill down
+            drawer.on_option_list_option_selected(OptionList.OptionSelected(tlist, tlist.get_option_at_index(1), 1))
+            await asyncio.sleep(0.1)
+
+            mock_client.get_playlist_tracks.assert_called_with("PL_2")
+            assert len(drawer._nav_stack) == 1
+
+            # In drilled-down view: item 0 must be Back button
+            assert tlist.option_count == 3  # 1 back button + 2 tracks
+            assert "Back" in str(tlist.get_option_at_index(0).prompt)
+            assert "Guns for Hire" in str(tlist.get_option_at_index(1).prompt)
+
+            # Select item 0 (Back button) -> return to playlists
+            drawer.on_option_list_option_selected(OptionList.OptionSelected(tlist, tlist.get_option_at_index(0), 0))
+            await asyncio.sleep(0.05)
+
+            assert len(drawer._nav_stack) == 0
+            assert tlist.option_count == 2
+            assert "Synth Hits" in str(tlist.get_option_at_index(0).prompt)
+            assert "Arcane Mix" in str(tlist.get_option_at_index(1).prompt)
+
+    asyncio.run(_test())
+
+
+def test_drawer_drill_down_album_search_and_keyboard_back():
+    """Verify selecting an album from search drills down and Backspace/Left navigates back."""
+    from textual import events
+
+    mock_client = MagicMock()
+    mock_client.is_authenticated.return_value = False
+    album_item = {
+        "id": "MPREb_album1",
+        "browse_id": "MPREb_album1",
+        "title": "Arcane League of Legends",
+        "artist": "Various Artists",
+        "year": "2021",
+        "thumbnail_url": "",
+    }
+    song_item = Track(id="s1", title="Enemy", artist="Imagine Dragons", album="Arcane", duration_seconds=173, thumbnail_url="")
+
+    mock_client.search_all.return_value = {
+        "songs": [song_item],
+        "albums": [album_item],
+        "artists": [],
+    }
+    mock_client.get_album_tracks.return_value = [
+        Track(id="a1", title="Playground", artist="Bea Miller", album="Arcane", duration_seconds=230, thumbnail_url="")
+    ]
+
+    class TestApp(App):
+        def compose(self) -> ComposeResult:
+            yield CurtainDrawer(client=mock_client)
+
+    async def _test():
+        app = TestApp()
+        async with app.run_test():
+            drawer = app.query_one(CurtainDrawer)
+            drawer.toggle()
+            await asyncio.sleep(0.05)
+
+            drawer.open_search()
+            s_input = drawer.query_one("#search-input", Input)
+            await drawer.on_input_submitted(Input.Submitted(s_input, value="Arcane"))
+            await asyncio.sleep(0.1)
+
+            tlist = drawer.query_one("#track-list", OptionList)
+            # Both song and album in results
+            assert tlist.option_count >= 2
+
+            # Select album item (index 1)
+            drawer.on_option_list_option_selected(OptionList.OptionSelected(tlist, tlist.get_option_at_index(1), 1))
+            await asyncio.sleep(0.1)
+
+            mock_client.get_album_tracks.assert_called_with("MPREb_album1")
+            assert len(drawer._nav_stack) == 1
+            assert tlist.option_count == 2  # [Back] + Playground
+            assert "Back" in str(tlist.get_option_at_index(0).prompt)
+
+            # Test keyboard backspace navigation
+            tlist.focus()
+            drawer.on_key(events.Key("backspace", "backspace"))
+            await asyncio.sleep(0.05)
+
+            assert len(drawer._nav_stack) == 0
+            assert tlist.option_count >= 2
+
+    asyncio.run(_test())
+
+
+def test_drawer_drill_down_select_track_and_left_key_back():
+    """Verify playing a track from drilled-down view works, and 'left' key navigates back."""
+    from textual import events
+
+    mock_client = MagicMock()
+    mock_client.is_authenticated.return_value = True
+    mock_client.get_library_playlists.return_value = [
+        {"id": "PL_1", "title": "Lo-Fi Nights", "count": "10", "thumbnail_url": ""}
+    ]
+    track_1 = Track(id="t1", title="Night Walk", artist="Chill Guy", album="Lofi", duration_seconds=150, thumbnail_url="")
+    mock_client.get_playlist_tracks.return_value = [track_1]
+    mock_play = MagicMock()
+
+    class TestApp(App):
+        def compose(self) -> ComposeResult:
+            yield CurtainDrawer(client=mock_client, on_play=mock_play)
+
+    async def _test():
+        app = TestApp()
+        async with app.run_test():
+            drawer = app.query_one(CurtainDrawer)
+            drawer.toggle()
+            await asyncio.sleep(0.05)
+
+            # Select library_playlists
+            pl_idx = [i for i, c in enumerate(drawer.categories) if c["id"] == "library_playlists"][0]
+            drawer.select_category(pl_idx)
+            await asyncio.sleep(0.05)
+
+            tlist = drawer.query_one("#track-list", OptionList)
+            # Drill down into playlist
+            drawer.on_option_list_option_selected(OptionList.OptionSelected(tlist, tlist.get_option_at_index(0), 0))
+            await asyncio.sleep(0.05)
+
+            assert len(drawer._nav_stack) == 1
+            # Option 0 is Back, Option 1 is Night Walk
+            assert "Back" in str(tlist.get_option_at_index(0).prompt)
+            assert "Night Walk" in str(tlist.get_option_at_index(1).prompt)
+
+            # Test 'left' arrow navigates back when inside drill-down
+            tlist.focus()
+            drawer.on_key(events.Key("left", "left"))
+            await asyncio.sleep(0.05)
+
+            assert len(drawer._nav_stack) == 0
+            assert tlist.option_count == 1
+            assert "Lo-Fi Nights" in str(tlist.get_option_at_index(0).prompt)
+
+            # Drill down again and play track
+            drawer.on_option_list_option_selected(OptionList.OptionSelected(tlist, tlist.get_option_at_index(0), 0))
+            await asyncio.sleep(0.05)
+
+            # Select track at index 1
+            drawer.on_option_list_option_selected(OptionList.OptionSelected(tlist, tlist.get_option_at_index(1), 1))
+            mock_play.assert_called_once_with(track_1)
+            assert not drawer.is_open()
+
+    asyncio.run(_test())
+
+
 
