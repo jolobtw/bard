@@ -228,3 +228,270 @@ def test_init_with_auth_header():
     with patch("bard.ytmusic_client.YTMusic") as MockYTMusic:
         client = YTMusicClient(auth_header="custom_auth_token")
         MockYTMusic.assert_called_with(auth="custom_auth_token")
+
+
+def test_client_get_liked_songs():
+    client = YTMusicClient()
+    with patch.object(client, "_ytm") as mock_ytm:
+        mock_ytm.get_liked_songs.return_value = {
+            "tracks": [
+                {
+                    "videoId": "v1",
+                    "title": "Liked Track 1",
+                    "artists": [{"name": "Artist 1"}],
+                    "duration_seconds": 180,
+                    "thumbnails": [],
+                }
+            ]
+        }
+        tracks = client.get_liked_songs()
+        assert len(tracks) == 1
+        assert tracks[0].title == "Liked Track 1"
+        assert tracks[0].id == "v1"
+
+
+def test_client_get_liked_songs_error_or_unauthenticated():
+    client = YTMusicClient()
+    with patch.object(client, "_ytm") as mock_ytm:
+        mock_ytm.get_liked_songs.side_effect = Exception("Auth required")
+        tracks = client.get_liked_songs()
+        assert tracks == []
+
+
+def test_client_get_library_playlists():
+    client = YTMusicClient()
+    with patch.object(client, "_ytm") as mock_ytm:
+        mock_ytm.get_library_playlists.return_value = [
+            {
+                "playlistId": "PL123",
+                "title": "Synth Favorites",
+                "count": "24",
+                "thumbnails": [{"url": "https://img.jpg/thumb.jpg"}],
+            }
+        ]
+        playlists = client.get_library_playlists()
+        assert len(playlists) == 1
+        assert playlists[0]["id"] == "PL123"
+        assert playlists[0]["title"] == "Synth Favorites"
+        assert playlists[0]["count"] == "24"
+        assert playlists[0]["thumbnail_url"] == "https://img.jpg/thumb.jpg"
+
+
+def test_client_get_library_playlists_error():
+    client = YTMusicClient()
+    with patch.object(client, "_ytm") as mock_ytm:
+        mock_ytm.get_library_playlists.side_effect = RuntimeError("Network error")
+        assert client.get_library_playlists() == []
+
+
+def test_client_get_history():
+    client = YTMusicClient()
+    with patch.object(client, "_ytm") as mock_ytm:
+        mock_ytm.get_history.return_value = [
+            {
+                "videoId": "hist1",
+                "title": "Past Track",
+                "artists": [{"name": "Artist Past"}],
+                "duration_seconds": 210,
+                "thumbnails": [],
+            }
+        ]
+        history = client.get_history()
+        assert len(history) == 1
+        assert history[0].id == "hist1"
+        assert history[0].title == "Past Track"
+
+
+def test_client_get_history_error():
+    client = YTMusicClient()
+    with patch.object(client, "_ytm") as mock_ytm:
+        mock_ytm.get_history.side_effect = Exception("User not signed in")
+        assert client.get_history() == []
+
+
+def test_client_get_album_tracks():
+    client = YTMusicClient()
+    with patch.object(client, "_ytm") as mock_ytm:
+        mock_ytm.get_album.return_value = {
+            "title": "Discovery",
+            "thumbnails": [{"url": "https://img.jpg/discovery.jpg"}],
+            "artists": [{"name": "Daft Punk"}],
+            "tracks": [
+                {
+                    "videoId": "d1",
+                    "title": "One More Time",
+                    "artists": [{"name": "Daft Punk"}],
+                    "duration_seconds": 320,
+                    "thumbnails": None,
+                },
+                {
+                    "videoId": "d2",
+                    "title": "Aerodynamic",
+                    "duration_seconds": 207,
+                    "thumbnails": None,
+                },
+            ],
+        }
+        tracks = client.get_album_tracks("MPREb_123")
+        assert len(tracks) == 2
+        assert tracks[0].id == "d1"
+        assert tracks[0].title == "One More Time"
+        assert tracks[0].album == "Discovery"
+        assert tracks[0].thumbnail_url == "https://img.jpg/discovery.jpg"
+        assert tracks[1].artist == "Daft Punk"
+
+
+def test_client_get_album_tracks_empty_or_error():
+    client = YTMusicClient()
+    assert client.get_album_tracks("") == []
+    assert client.get_album_tracks("   ") == []
+
+    with patch.object(client, "_ytm") as mock_ytm:
+        mock_ytm.get_album.side_effect = Exception("Album not found")
+        assert client.get_album_tracks("invalid_album") == []
+
+
+def test_client_get_artist_top_tracks():
+    client = YTMusicClient()
+    with patch.object(client, "_ytm") as mock_ytm:
+        mock_ytm.get_artist.return_value = {
+            "name": "Daft Punk",
+            "thumbnails": [{"url": "https://img.jpg/artist.jpg"}],
+            "songs": {
+                "results": [
+                    {
+                        "videoId": "top1",
+                        "title": "Get Lucky",
+                        "duration_seconds": 248,
+                    }
+                ]
+            },
+        }
+        tracks = client.get_artist_top_tracks("UC_channel123")
+        assert len(tracks) == 1
+        assert tracks[0].id == "top1"
+        assert tracks[0].title == "Get Lucky"
+        assert tracks[0].artist == "Daft Punk"
+        assert tracks[0].thumbnail_url == "https://img.jpg/artist.jpg"
+
+
+def test_client_search_all():
+    client = YTMusicClient()
+    with patch.object(client, "_ytm") as mock_ytm:
+        mock_ytm.search.return_value = [
+            {
+                "resultType": "song",
+                "videoId": "s1",
+                "title": "Song One",
+                "artists": [{"name": "Artist One"}],
+                "duration_seconds": 180,
+                "thumbnails": [{"url": "https://img.jpg/s1.jpg"}],
+            },
+            {
+                "resultType": "album",
+                "browseId": "alb1",
+                "playlistId": "OLAK_alb1",
+                "title": "Greatest Hits",
+                "artists": [{"name": "Artist One"}],
+                "year": "2024",
+                "thumbnails": [{"url": "https://img.jpg/alb1.jpg"}],
+            },
+            {
+                "resultType": "artist",
+                "browseId": "art1",
+                "artist": "Artist One",
+                "thumbnails": [{"url": "https://img.jpg/art1.jpg"}],
+            },
+        ]
+        res = client.search_all("Artist One")
+        assert "songs" in res
+        assert "albums" in res
+        assert "artists" in res
+
+        assert len(res["songs"]) == 1
+        assert res["songs"][0].id == "s1"
+        assert res["songs"][0].title == "Song One"
+
+        assert len(res["albums"]) == 1
+        assert res["albums"][0]["browse_id"] == "alb1"
+        assert res["albums"][0]["title"] == "Greatest Hits"
+        assert res["albums"][0]["artist"] == "Artist One"
+        assert res["albums"][0]["year"] == "2024"
+
+        assert len(res["artists"]) == 1
+        assert res["artists"][0]["browse_id"] == "art1"
+        assert res["artists"][0]["name"] == "Artist One"
+
+
+def test_client_search_all_empty_or_error():
+    client = YTMusicClient()
+    assert client.search_all("") == {"songs": [], "albums": [], "artists": []}
+    assert client.search_all("   ") == {"songs": [], "albums": [], "artists": []}
+
+    with patch.object(client, "_ytm") as mock_ytm:
+        mock_ytm.search.side_effect = Exception("API rate limited")
+        assert client.search_all("fail") == {"songs": [], "albums": [], "artists": []}
+
+
+def test_client_is_authenticated():
+    client_anon = YTMusicClient()
+    assert client_anon.is_authenticated() is False
+
+    with patch("bard.ytmusic_client.YTMusic"), \
+         patch("bard.ytmusic_client.OAuthCredentials"):
+        mock_oauth = MagicMock()
+        mock_oauth.is_authenticated.return_value = True
+        client_auth = YTMusicClient(oauth=mock_oauth)
+        assert client_auth.is_authenticated() is True
+
+
+def test_client_init_with_oauth_loads_credentials(tmp_path):
+    token_file = tmp_path / "oauth.json"
+    import json
+    token_file.write_text(
+        json.dumps({
+            "access_token": "mock_token",
+            "refresh_token": "mock_refresh",
+            "token_type": "Bearer",
+            "expires_at": 9999999999,
+        })
+    )
+
+    from bard.oauth import YTMusicOAuth
+    oauth = YTMusicOAuth(token_path=token_file)
+
+    with patch("bard.ytmusic_client.YTMusic") as MockYTMusic, \
+         patch("bard.ytmusic_client.OAuthCredentials") as MockOAuthCreds:
+        client = YTMusicClient(oauth=oauth)
+        MockOAuthCreds.assert_called_once_with(
+            client_id=oauth.client_id,
+            client_secret=oauth.client_secret,
+        )
+        MockYTMusic.assert_called_once_with(
+            auth=str(token_file),
+            oauth_credentials=MockOAuthCreds.return_value,
+        )
+        assert client.is_authenticated() is True
+
+
+def test_client_init_oauth_failure_falls_back_to_anonymous(tmp_path):
+    token_file = tmp_path / "oauth.json"
+    import json
+    token_file.write_text(
+        json.dumps({
+            "access_token": "mock_token",
+            "refresh_token": "mock_refresh",
+            "token_type": "Bearer",
+            "expires_at": 9999999999,
+        })
+    )
+
+    from bard.oauth import YTMusicOAuth
+    oauth = YTMusicOAuth(token_path=token_file)
+
+    with patch("bard.ytmusic_client.YTMusic") as MockYTMusic:
+        # First call with auth fails, second call (fallback) succeeds
+        MockYTMusic.side_effect = [RuntimeError("Invalid oauth payload"), MagicMock()]
+        client = YTMusicClient(oauth=oauth)
+        assert MockYTMusic.call_count == 2
+        assert client.is_authenticated() is False

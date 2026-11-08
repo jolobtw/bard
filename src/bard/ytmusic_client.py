@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
 
 import yt_dlp
-from ytmusicapi import YTMusic
+from ytmusicapi import OAuthCredentials, YTMusic
 
 from bard.models import Track
+from bard.oauth import YTMusicOAuth
 
 logger = logging.getLogger(__name__)
 
@@ -94,18 +96,67 @@ def _parse_thumbnail(item: Dict[str, Any]) -> str:
 
 
 class YTMusicClient:
-    """Client for YouTube Music catalog search and audio stream extraction."""
+    """Client for YouTube Music catalog search, personal library, and audio stream extraction."""
 
-    def __init__(self, auth_header: Optional[str] = None):
+    def __init__(
+        self,
+        auth_header: Optional[str] = None,
+        oauth: Optional[YTMusicOAuth] = None,
+        token_path: Optional[Union[Path, str]] = None,
+    ):
         self.auth_header = auth_header
-        try:
-            self.ytmusic = YTMusic(auth=auth_header)
-        except Exception as exc:
-            logger.warning(
-                "Failed to initialize YTMusic with auth_header: %s; falling back to unauthenticated",
-                exc,
-            )
-            self.ytmusic = YTMusic()
+        self._oauth = oauth
+        self._authenticated = False
+
+        if auth_header:
+            try:
+                self._ytm = YTMusic(auth=auth_header)
+                self._authenticated = True
+            except Exception as exc:
+                logger.warning(
+                    "Failed to initialize YTMusic with auth_header: %s; falling back to unauthenticated",
+                    exc,
+                )
+                self._ytm = YTMusic()
+                self._authenticated = False
+        else:
+            if self._oauth is None:
+                self._oauth = YTMusicOAuth(token_path=Path(token_path) if token_path else None)
+
+            if self._oauth.is_authenticated():
+                try:
+                    oauth_creds = OAuthCredentials(
+                        client_id=str(self._oauth.client_id),
+                        client_secret=str(self._oauth.client_secret),
+                    )
+                    self._ytm = YTMusic(
+                        auth=str(self._oauth.token_path),
+                        oauth_credentials=oauth_creds,
+                    )
+                    self._authenticated = True
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to initialize YTMusic with OAuth credentials: %s; falling back to unauthenticated",
+                        exc,
+                    )
+                    self._ytm = YTMusic()
+                    self._authenticated = False
+            else:
+                self._ytm = YTMusic()
+                self._authenticated = False
+
+    @property
+    def ytmusic(self) -> YTMusic:
+        """Alias for underlying YTMusic client instance."""
+        return self._ytm
+
+    @ytmusic.setter
+    def ytmusic(self, val: YTMusic) -> None:
+        self._ytm = val
+
+    def is_authenticated(self) -> bool:
+        """Check whether the client is authenticated with YouTube Music."""
+        return self._authenticated
 
     def _normalize_track(self, item: Dict[str, Any]) -> Optional[Track]:
         """Convert a raw dictionary result from ytmusicapi to a Track model."""
@@ -149,11 +200,11 @@ class YTMusicClient:
 
         try:
             # First attempt search with songs filter
-            raw_results = self.ytmusic.search(query.strip(), filter="songs", limit=limit)
+            raw_results = self._ytm.search(query.strip(), filter="songs", limit=limit)
         except Exception as exc:
             logger.debug("ytmusic search with filter='songs' failed: %s; trying unfiltered", exc)
             try:
-                raw_results = self.ytmusic.search(query.strip(), limit=limit)
+                raw_results = self._ytm.search(query.strip(), limit=limit)
             except Exception as e:
                 logger.error("ytmusic search failed: %s", e)
                 return []
@@ -177,7 +228,7 @@ class YTMusicClient:
             return []
 
         try:
-            playlist_data = self.ytmusic.get_playlist(playlist_id)
+            playlist_data = self._ytm.get_playlist(playlist_id)
         except Exception as exc:
             logger.error("Failed to fetch playlist %s: %s", playlist_id, exc)
             return []
@@ -200,7 +251,7 @@ class YTMusicClient:
     def get_trending(self, country: str = "US") -> List[Track]:
         """Fetch trending tracks/charts for a given country."""
         try:
-            charts = self.ytmusic.get_charts(country=country)
+            charts = self._ytm.get_charts(country=country)
             if isinstance(charts, dict):
                 videos_data = charts.get("videos", [])
                 if isinstance(videos_data, dict):
@@ -286,3 +337,240 @@ class YTMusicClient:
         except Exception as exc:
             logger.error("Failed to extract stream URL for %s: %s", video_id, exc)
             return None
+
+    def get_liked_songs(self, limit: int = 50) -> List[Track]:
+        """Retrieve user's liked songs from YouTube Music."""
+        try:
+            raw_data = self._ytm.get_liked_songs(limit=limit)
+        except Exception as exc:
+            logger.debug("Failed to fetch liked songs: %s", exc)
+            return []
+
+        if isinstance(raw_data, dict):
+            raw_tracks = raw_data.get("tracks", [])
+        elif isinstance(raw_data, list):
+            raw_tracks = raw_data
+        else:
+            return []
+
+        if not isinstance(raw_tracks, list):
+            return []
+
+        tracks: List[Track] = []
+        for item in raw_tracks:
+            if not isinstance(item, dict):
+                continue
+            track = self._normalize_track(item)
+            if track is not None:
+                tracks.append(track)
+                if len(tracks) >= limit:
+                    break
+        return tracks
+
+    def get_library_playlists(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Retrieve playlists from the user's library."""
+        try:
+            raw_playlists = self._ytm.get_library_playlists(limit=limit)
+        except Exception as exc:
+            logger.debug("Failed to fetch library playlists: %s", exc)
+            return []
+
+        if not isinstance(raw_playlists, list):
+            return []
+
+        playlists: List[Dict[str, Any]] = []
+        for p in raw_playlists:
+            if not isinstance(p, dict):
+                continue
+            playlist_id = p.get("playlistId") or p.get("id") or ""
+            title = p.get("title") or "Untitled Playlist"
+            count = p.get("count") or p.get("trackCount") or p.get("itemCount") or ""
+            thumb = _parse_thumbnail(p)
+            playlists.append({
+                "id": playlist_id,
+                "title": title,
+                "count": str(count) if count != "" else "",
+                "thumbnail_url": thumb,
+            })
+            if len(playlists) >= limit:
+                break
+        return playlists
+
+    def get_history(self) -> List[Track]:
+        """Retrieve playback history from YouTube Music."""
+        try:
+            raw_items = self._ytm.get_history()
+        except Exception as exc:
+            logger.debug("Failed to fetch history: %s", exc)
+            return []
+
+        if not isinstance(raw_items, list):
+            return []
+
+        tracks: List[Track] = []
+        for item in raw_items:
+            if not isinstance(item, dict):
+                continue
+            track = self._normalize_track(item)
+            if track is not None:
+                tracks.append(track)
+        return tracks
+
+    def get_album_tracks(self, browse_id: str) -> List[Track]:
+        """Retrieve tracks for a given album browse ID."""
+        if not browse_id or not browse_id.strip():
+            return []
+
+        try:
+            album_data = self._ytm.get_album(browse_id.strip())
+        except Exception as exc:
+            logger.debug("Failed to fetch album tracks for %s: %s", browse_id, exc)
+            return []
+
+        if not isinstance(album_data, dict):
+            return []
+
+        raw_tracks = album_data.get("tracks", [])
+        if not isinstance(raw_tracks, list):
+            return []
+
+        album_thumb = _parse_thumbnail(album_data)
+        album_title = album_data.get("title") or ""
+        album_artists = album_data.get("artists")
+
+        tracks: List[Track] = []
+        for item in raw_tracks:
+            if not isinstance(item, dict):
+                continue
+            item_copy = dict(item)
+            if not item_copy.get("thumbnails") and album_thumb:
+                item_copy["thumbnail_url"] = album_thumb
+            if not item_copy.get("album") and album_title:
+                item_copy["album"] = album_title
+            if not item_copy.get("artists") and album_artists:
+                item_copy["artists"] = album_artists
+
+            track = self._normalize_track(item_copy)
+            if track is not None:
+                tracks.append(track)
+
+        return tracks
+
+    def get_artist_top_tracks(self, channel_id: str) -> List[Track]:
+        """Retrieve top tracks for an artist channel ID."""
+        if not channel_id or not channel_id.strip():
+            return []
+
+        try:
+            artist_data = self._ytm.get_artist(channel_id.strip())
+        except Exception as exc:
+            logger.debug("Failed to fetch artist top tracks for %s: %s", channel_id, exc)
+            return []
+
+        if not isinstance(artist_data, dict):
+            return []
+
+        songs_section = artist_data.get("songs")
+        raw_tracks = []
+        if isinstance(songs_section, dict):
+            raw_tracks = songs_section.get("results", [])
+        elif isinstance(songs_section, list):
+            raw_tracks = songs_section
+
+        if not isinstance(raw_tracks, list):
+            return []
+
+        artist_thumb = _parse_thumbnail(artist_data)
+        artist_name = artist_data.get("name")
+
+        tracks: List[Track] = []
+        for item in raw_tracks:
+            if not isinstance(item, dict):
+                continue
+            item_copy = dict(item)
+            if not item_copy.get("thumbnails") and artist_thumb:
+                item_copy["thumbnail_url"] = artist_thumb
+            if not item_copy.get("artists") and not item_copy.get("artist") and artist_name:
+                item_copy["artist"] = artist_name
+
+            track = self._normalize_track(item_copy)
+            if track is not None:
+                tracks.append(track)
+
+        return tracks
+
+    def search_all(self, query: str, limit: int = 25) -> Dict[str, Any]:
+        """Search YouTube Music across songs, albums, and artists."""
+        empty_result: Dict[str, Any] = {"songs": [], "albums": [], "artists": []}
+        if not query or not query.strip():
+            return empty_result
+
+        try:
+            raw_results = self._ytm.search(query.strip(), limit=limit)
+        except Exception as exc:
+            logger.debug("search_all failed for query '%s': %s", query, exc)
+            return empty_result
+
+        if not isinstance(raw_results, list):
+            return empty_result
+
+        songs: List[Track] = []
+        albums: List[Dict[str, Any]] = []
+        artists: List[Dict[str, Any]] = []
+
+        for item in raw_results:
+            if not isinstance(item, dict):
+                continue
+
+            result_type = str(item.get("resultType") or "").lower()
+
+            if result_type in ("song", "video"):
+                track = self._normalize_track(item)
+                if track is not None:
+                    songs.append(track)
+            elif result_type == "album":
+                album_id = item.get("browseId") or item.get("playlistId") or ""
+                albums.append({
+                    "id": album_id,
+                    "browse_id": item.get("browseId") or "",
+                    "browseId": item.get("browseId") or "",
+                    "playlist_id": item.get("playlistId") or "",
+                    "playlistId": item.get("playlistId") or "",
+                    "title": item.get("title") or "Unknown Album",
+                    "artist": _parse_artist(item),
+                    "year": str(item.get("year") or ""),
+                    "thumbnail_url": _parse_thumbnail(item),
+                })
+            elif result_type == "artist":
+                artist_id = item.get("browseId") or item.get("channelId") or ""
+                artists.append({
+                    "id": artist_id,
+                    "browse_id": item.get("browseId") or "",
+                    "browseId": item.get("browseId") or "",
+                    "name": item.get("artist") or item.get("name") or "Unknown Artist",
+                    "thumbnail_url": _parse_thumbnail(item),
+                })
+            else:
+                if "videoId" in item:
+                    track = self._normalize_track(item)
+                    if track is not None:
+                        songs.append(track)
+                elif item.get("type") == "Album" or ("browseId" in item and "artists" in item and "year" in item):
+                    album_id = item.get("browseId") or item.get("playlistId") or ""
+                    albums.append({
+                        "id": album_id,
+                        "browse_id": item.get("browseId") or "",
+                        "browseId": item.get("browseId") or "",
+                        "playlist_id": item.get("playlistId") or "",
+                        "playlistId": item.get("playlistId") or "",
+                        "title": item.get("title") or "Unknown Album",
+                        "artist": _parse_artist(item),
+                        "year": str(item.get("year") or ""),
+                        "thumbnail_url": _parse_thumbnail(item),
+                    })
+
+        return {
+            "songs": songs,
+            "albums": albums,
+            "artists": artists,
+        }
