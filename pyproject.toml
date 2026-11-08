@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "bard"
 version = "0.2.0"
-description = "Arcane Terminal Spotify Player"
+description = "Arcane Terminal Music Player"
 authors = [{ name = "jolobtw" }]
 readme = "README.md"
 requires-python = ">=3.10"

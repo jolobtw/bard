@@ -55,7 +55,7 @@ class ArcaneHeader(Static):
         ]
         markup = format_rich_header(
             app_title="BARD",
-            tagline="Arcane Spotify Player",
+            tagline="Arcane Music Player",
             badges=badges,
             width=width,
             theme=self.theme,

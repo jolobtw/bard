@@ -1,5 +1,5 @@
 # 🎵 B A R D
-### The Arcane Terminal Spotify Player
+### The Arcane Terminal Music Player
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Textual](https://img.shields.io/badge/built%20with-Textual-teal.svg)](https://textual.textualize.io/)
@@ -21,7 +21,7 @@
 - **Smart Rate-Limit & Quota Guard:** Built-in in-memory caching and intelligent exponential backoff to handle Spotify Web API rate limits gracefully without dropped frames or freezes.
 - **Standalone Audio Engine (`librespot`):** Integrates the open-source `librespot` streaming engine to decode pristine 320 kbps Ogg Vorbis streams directly to your audio device—no official Spotify desktop app required!
 - **Cross-Platform Audio Support:** Seamless playback on **Windows** (WASAPI) and **macOS** (CoreAudio for both Apple Silicon M-series and Intel).
-- **Arcane Design System:** Styled with custom dark-fantasy design tokens, golden borders, and arcane rune glyphs (`✦ ❖ BARD ❖ Arcane Spotify Player`).
+- **Arcane Design System:** Styled with custom dark-fantasy design tokens, golden borders, and arcane rune glyphs (`✦ ❖ BARD ❖ Arcane Music Player`).
 
 ---
 
