@@ -45,6 +45,7 @@ class AudioPlayer:
 
     def _start_process(self) -> bool:
         """Spawn the headless mpv process."""
+        self._disconnect()
         args = [
             self.binary_path,
             "--no-video",
@@ -92,10 +93,11 @@ class AudioPlayer:
 
     def _ensure_connection(self, retries: int = 20, delay: float = 0.05) -> bool:
         """Ensure connection to the IPC server is active."""
+        if self._process is None or self._process.poll() is not None:
+            self._disconnect()
+            return False
         if self._ipc_conn is not None:
             return True
-        if self._process and self._process.poll() is not None:
-            return False
 
         for i in range(retries):
             if self._connect():

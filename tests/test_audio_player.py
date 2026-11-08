@@ -155,6 +155,7 @@ def test_player_close():
 def test_player_send_command_filters_events():
     with patch("bard.audio_player.subprocess.Popen") as mock_popen:
         mock_proc = MagicMock()
+        mock_proc.poll.return_value = None
         mock_popen.return_value = mock_proc
         player = AudioPlayer(binary_path="dummy_mpv")
 
@@ -172,6 +173,7 @@ def test_player_send_command_filters_events():
 def test_player_send_command_handles_io_error():
     with patch("bard.audio_player.subprocess.Popen") as mock_popen:
         mock_proc = MagicMock()
+        mock_proc.poll.return_value = None
         mock_popen.return_value = mock_proc
         player = AudioPlayer(binary_path="dummy_mpv")
 
@@ -208,4 +210,35 @@ def test_player_unix_socket_connect_and_cleanup(tmp_path):
         player.close()
         mock_sock_inst.close.assert_called_once()
         assert not fake_sock_path.exists()
+
+
+def test_player_restart_process_disconnects_stale_ipc():
+    with patch("bard.audio_player.subprocess.Popen") as mock_popen:
+        mock_proc1 = MagicMock()
+        mock_proc1.poll.return_value = None
+        mock_popen.return_value = mock_proc1
+        player = AudioPlayer(binary_path="dummy_mpv")
+
+        # Simulate active stale IPC connection on dead process
+        stale_conn = MagicMock()
+        player._ipc_conn = stale_conn
+        mock_proc1.poll.return_value = 1  # dead process
+
+        # _ensure_connection must detect dead process, disconnect stale conn, and return False
+        assert player._ensure_connection() is False
+        stale_conn.close.assert_called_once()
+        assert player._ipc_conn is None
+
+        # Re-assign another stale connection and invoke _start_process()
+        stale_conn2 = MagicMock()
+        player._ipc_conn = stale_conn2
+        mock_proc2 = MagicMock()
+        mock_proc2.poll.return_value = None
+        mock_popen.return_value = mock_proc2
+
+        player._start_process()
+        stale_conn2.close.assert_called_once()
+        assert player._ipc_conn is None
+        assert player._process == mock_proc2
+
 
