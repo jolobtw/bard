@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Optional
@@ -11,13 +12,15 @@ import requests
 
 from bard.config import get_default_config_dir
 
+logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     from bard.config import BardConfig
 
 # Default YouTube on TV public client credentials (RFC 8628 Device Flow)
 # Stored reversed to prevent false-positive rejection by GitHub secret scanning push protection.
 _REV_CLIENT_ID = "moc.tnetnocresuelgoog.sppa.86co3ab8eb6k81kepn8ddi50hl3mld6d-454807655168"
-_REV_CLIENT_SECRET = "TAXKGGSCxifanR0s9GohVobS"
+_REV_CLIENT_SECRET = "TAXKGGSCxifaNr0s9GohVobS"
 DEFAULT_CLIENT_ID: str = _REV_CLIENT_ID[::-1]
 DEFAULT_CLIENT_SECRET: str = _REV_CLIENT_SECRET[::-1]
 DEVICE_CODE_URL: str = "https://oauth2.googleapis.com/device/code"
@@ -139,8 +142,15 @@ class YTMusicOAuth:
                 current_interval += 5
                 time.sleep(current_interval)
             elif err in ("expired_token", "access_denied"):
+                logger.info("Device authorization flow stopped: %s", err)
                 return None
             else:
+                logger.warning(
+                    "Unexpected token polling error: %s (status %s: %s)",
+                    err,
+                    resp.status_code,
+                    resp.text,
+                )
                 return None
 
         return None

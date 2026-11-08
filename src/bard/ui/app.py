@@ -460,14 +460,16 @@ class BardApp(App):
 
         token_data = oauth.poll_for_token(device_code, interval=interval)
         if token_data:
-            self.client = YTMusicClient(oauth=oauth)
-            self.drawer_widget.client = self.client
-            self._safe_call(self.drawer_widget.refresh_categories)
-            self._safe_call(
-                self.notify,
-                "Connected to YouTube Music successfully!",
-                title="Account Linked",
-            )
+            def _apply_login() -> None:
+                self.client = YTMusicClient(oauth=oauth)
+                self.drawer_widget.client = self.client
+                self.drawer_widget.refresh_categories()
+                self.notify(
+                    "Connected to YouTube Music successfully!",
+                    title="Account Linked",
+                )
+
+            self._safe_call(_apply_login)
             return True
         else:
             self._safe_call(
