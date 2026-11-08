@@ -653,6 +653,11 @@ class CurtainDrawer(Widget):
                             tlist.add_option(self._render_playlist_row(idx, item))
 
             self._update_column_headers()
+            if getattr(self, "_play_on_load", False):
+                self._play_on_load = False
+                if self.tracks and self.on_play:
+                    self.on_play(self.tracks[0])
+                    self.hide()
         except Exception:
             pass
 
@@ -844,13 +849,20 @@ class CurtainDrawer(Widget):
                     if self.on_disconnect_account:
                         self.on_disconnect_account()
                     self.refresh_categories()
-                else:
+                elif cat_id == "library_playlists":
                     tlist = self.query_one("#track-list", OptionList)
                     if self._current_items or self.tracks:
                         tlist.focus()
                         if tlist.highlighted is None:
                             tlist.highlighted = 0
                     self._update_column_headers()
+                else:
+                    if self.tracks and self.on_play:
+                        self.on_play(self.tracks[0])
+                        self.hide()
+                    else:
+                        self._play_on_load = True
+                        self.load_tracks_for_category(event.option_index)
         elif event.option_list.id == "track-list" and event.option_index is not None:
             if self._nav_stack:
                 if event.option_index == 0:

@@ -428,13 +428,16 @@ def test_client_search_all_empty_or_error():
     assert client.search_all("") == {"songs": [], "albums": [], "artists": []}
     assert client.search_all("   ") == {"songs": [], "albums": [], "artists": []}
 
-    with patch.object(client, "_ytm") as mock_ytm:
+    with patch.object(client, "_ytm") as mock_ytm, \
+         patch.object(client, "_anon") as mock_anon:
         mock_ytm.search.side_effect = Exception("API rate limited")
+        mock_anon.search.side_effect = Exception("API rate limited")
         assert client.search_all("fail") == {"songs": [], "albums": [], "artists": []}
 
 
-def test_client_is_authenticated():
-    client_anon = YTMusicClient()
+def test_client_is_authenticated(tmp_path):
+    empty_token = tmp_path / "empty_oauth.json"
+    client_anon = YTMusicClient(token_path=empty_token)
     assert client_anon.is_authenticated() is False
 
     with patch("bard.ytmusic_client.YTMusic"), \

@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+import requests
 import yt_dlp
 from ytmusicapi import OAuthCredentials, YTMusic
 
@@ -95,6 +96,70 @@ def _parse_thumbnail(item: Dict[str, Any]) -> str:
     return ""
 
 
+def _extract_text(obj: Any) -> str:
+    """Extract plain text from string or Innertube text runs / simpleText."""
+    if not obj:
+        return ""
+    if isinstance(obj, str):
+        return obj.strip()
+    if isinstance(obj, dict):
+        if "simpleText" in obj and isinstance(obj["simpleText"], str):
+            return obj["simpleText"].strip()
+        if "runs" in obj and isinstance(obj["runs"], list):
+            return "".join(
+                str(r.get("text", "")) for r in obj["runs"] if isinstance(r, dict)
+            ).strip()
+    return ""
+
+
+def _parse_tile_track(tr: Dict[str, Any], default_album: str = "") -> Optional[Track]:
+    """Parse a tileRenderer object from TVHTML5 into a Track model."""
+    if not isinstance(tr, dict):
+        return None
+    vid = tr.get("onSelectCommand", {}).get("watchEndpoint", {}).get("videoId")
+    if not vid:
+        meta_title = tr.get("metadata", {}).get("tileMetadataRenderer", {}).get("title", {})
+        runs = meta_title.get("runs", []) if isinstance(meta_title, dict) else []
+        if runs and isinstance(runs[0], dict) and "navigationEndpoint" in runs[0]:
+            vid = runs[0]["navigationEndpoint"].get("watchEndpoint", {}).get("videoId")
+    if not vid or not isinstance(vid, str):
+        return None
+
+    title = _extract_text(tr.get("metadata", {}).get("tileMetadataRenderer", {}).get("title")) or "Unknown Track"
+    lines = tr.get("metadata", {}).get("tileMetadataRenderer", {}).get("lines", [])
+    artist = "Unknown Artist"
+    if isinstance(lines, list) and lines:
+        items = lines[0].get("lineRenderer", {}).get("items", [])
+        if isinstance(items, list) and items:
+            art_text = _extract_text(items[0].get("lineItemRenderer", {}).get("text"))
+            if art_text:
+                artist = art_text
+
+    header = tr.get("header", {}).get("tileHeaderRenderer", {})
+    thumbs = header.get("thumbnail", {}).get("thumbnails", []) if isinstance(header, dict) else []
+    thumb = thumbs[-1].get("url", "") if isinstance(thumbs, list) and thumbs else ""
+
+    dur_sec = 0
+    overlays = header.get("thumbnailOverlays", []) if isinstance(header, dict) else []
+    if isinstance(overlays, list):
+        for overlay in overlays:
+            if isinstance(overlay, dict):
+                time_status = overlay.get("thumbnailOverlayTimeStatusRenderer", {}).get("text", {})
+                dur_str = _extract_text(time_status)
+                if dur_str:
+                    dur_sec = _parse_duration(dur_str)
+                    break
+
+    return Track(
+        id=vid,
+        title=title,
+        artist=artist,
+        album=default_album or "YouTube Music",
+        duration_seconds=dur_sec,
+        thumbnail_url=thumb,
+    )
+
+
 class YTMusicClient:
     """Client for YouTube Music catalog search, personal library, and audio stream extraction."""
 
@@ -107,6 +172,7 @@ class YTMusicClient:
         self.auth_header = auth_header
         self._oauth = oauth
         self._authenticated = False
+        self._anon_instance: Optional[YTMusic] = None
 
         if auth_header:
             try:
@@ -154,6 +220,23 @@ class YTMusicClient:
     def ytmusic(self, val: YTMusic) -> None:
         self._ytm = val
 
+    @property
+    def _anon(self) -> YTMusic:
+        """Cached anonymous YTMusic client for public catalog discovery."""
+        if not self._authenticated:
+            return self._ytm
+        if self._anon_instance is None:
+            self._anon_instance = YTMusic()
+        return self._anon_instance
+
+    @_anon.setter
+    def _anon(self, val: YTMusic) -> None:
+        self._anon_instance = val
+
+    @_anon.deleter
+    def _anon(self) -> None:
+        self._anon_instance = None
+
     def is_authenticated(self) -> bool:
         """Check whether the client is authenticated with YouTube Music."""
         return self._authenticated
@@ -198,6 +281,7 @@ class YTMusicClient:
         if not query or not query.strip():
             return []
 
+        raw_results = None
         try:
             # First attempt search with songs filter
             raw_results = self._ytm.search(query.strip(), filter="songs", limit=limit)
@@ -206,8 +290,17 @@ class YTMusicClient:
             try:
                 raw_results = self._ytm.search(query.strip(), limit=limit)
             except Exception as e:
-                logger.error("ytmusic search failed: %s", e)
-                return []
+                logger.debug("ytmusic search failed on primary: %s", e)
+
+        if (not raw_results or not isinstance(raw_results, list)) and self._authenticated:
+            try:
+                raw_results = self._anon.search(query.strip(), filter="songs", limit=limit)
+            except Exception:
+                try:
+                    raw_results = self._anon.search(query.strip(), limit=limit)
+                except Exception as e2:
+                    logger.error("Anonymous catalog search also failed: %s", e2)
+                    return []
 
         if not isinstance(raw_results, list):
             return []
@@ -222,21 +315,130 @@ class YTMusicClient:
 
         return tracks
 
+    def _get_tv_headers(self) -> Optional[Dict[str, str]]:
+        token = None
+        if hasattr(self._ytm, "headers") and self._ytm.headers.get("authorization"):
+            token = self._ytm.headers["authorization"]
+        elif self._oauth:
+            tokens = self._oauth.load_tokens()
+            if tokens and tokens.get("access_token"):
+                token = f"Bearer {tokens['access_token']}"
+        if not token:
+            return None
+        return {
+            "Authorization": token,
+            "User-Agent": "Mozilla/5.0",
+            "Content-Type": "application/json",
+        }
+
+    def _post_tv_endpoint(self, endpoint: str, body_data: Dict[str, Any]) -> Dict[str, Any]:
+        headers = self._get_tv_headers()
+        if not headers:
+            return {}
+        payload: Dict[str, Any] = {
+            "context": {
+                "client": {
+                    "clientName": "TVHTML5",
+                    "clientVersion": "7.20261108.08.00",
+                    "hl": "en",
+                }
+            }
+        }
+        payload.update(body_data)
+        try:
+            resp = requests.post(
+                f"https://www.youtube.com/youtubei/v1/{endpoint}",
+                json=payload,
+                headers=headers,
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                return resp.json()
+            logger.debug("TV endpoint %s returned status %s: %s", endpoint, resp.status_code, resp.text[:100])
+        except Exception as exc:
+            logger.debug("TV endpoint request failed for %s: %s", endpoint, exc)
+        return {}
+
+    def _fetch_tv_liked_songs(self, limit: int = 50) -> List[Track]:
+        d = self._post_tv_endpoint("browse", {"browseId": "FEmusic_liked_videos"})
+        tabs = d.get("contents", {}).get("tvBrowseRenderer", {}).get("content", {}).get("tvSecondaryNavRenderer", {}).get("sections", [{}])[0].get("tvSecondaryNavSectionRenderer", {}).get("tabs", [])
+        tracks: List[Track] = []
+        for t in tabs:
+            items = t.get("tabRenderer", {}).get("content", {}).get("tvSurfaceContentRenderer", {}).get("content", {}).get("gridRenderer", {}).get("items", [])
+            for it in items:
+                tr = it.get("tileRenderer", {})
+                t_obj = _parse_tile_track(tr, default_album="Liked Songs")
+                if t_obj:
+                    tracks.append(t_obj)
+                    if len(tracks) >= limit:
+                        return tracks
+        return tracks
+
+    def _fetch_tv_playlists(self, limit: int = 50) -> List[Dict[str, Any]]:
+        d = self._post_tv_endpoint("browse", {"browseId": "FEplaylist_aggregation"})
+        pl_items = d.get("contents", {}).get("tvBrowseRenderer", {}).get("content", {}).get("tvSurfaceContentRenderer", {}).get("content", {}).get("gridRenderer", {}).get("items", [])
+        playlists: List[Dict[str, Any]] = []
+        for it in pl_items:
+            tr = it.get("tileRenderer", {})
+            browse_id = tr.get("onSelectCommand", {}).get("browseEndpoint", {}).get("browseId", "")
+            pl_id = browse_id.replace("VL", "") if browse_id.startswith("VL") else browse_id
+            title = _extract_text(tr.get("metadata", {}).get("tileMetadataRenderer", {}).get("title")) or "Untitled Playlist"
+            header = tr.get("header", {}).get("tileHeaderRenderer", {})
+            thumbs = header.get("thumbnail", {}).get("thumbnails", []) if isinstance(header, dict) else []
+            thumb = thumbs[-1].get("url", "") if thumbs else ""
+            if pl_id:
+                playlists.append({
+                    "id": pl_id,
+                    "title": title,
+                    "count": "",
+                    "thumbnail_url": thumb,
+                })
+                if len(playlists) >= limit:
+                    break
+        return playlists
+
+    def _fetch_tv_playlist_tracks(self, playlist_id: str) -> List[Track]:
+        browse_id = f"VL{playlist_id}" if not playlist_id.startswith("VL") else playlist_id
+        d = self._post_tv_endpoint("browse", {"browseId": browse_id})
+        rc = d.get("contents", {}).get("tvBrowseRenderer", {}).get("content", {}).get("tvSurfaceContentRenderer", {}).get("content", {}).get("twoColumnRenderer", {}).get("rightColumn", {})
+        ptrack_items = rc.get("playlistVideoListRenderer", {}).get("contents", [])
+        tracks: List[Track] = []
+        for it in ptrack_items:
+            tr = it.get("tileRenderer", {})
+            t_obj = _parse_tile_track(tr, default_album="Playlist")
+            if t_obj:
+                tracks.append(t_obj)
+        return tracks
+
+    def _fetch_tv_history(self) -> List[Track]:
+        d = self._post_tv_endpoint("browse", {"browseId": "FEhistory"})
+        h_items = d.get("contents", {}).get("tvBrowseRenderer", {}).get("content", {}).get("tvSurfaceContentRenderer", {}).get("content", {}).get("gridRenderer", {}).get("items", [])
+        tracks: List[Track] = []
+        for it in h_items:
+            tr = it.get("tileRenderer", {})
+            t_obj = _parse_tile_track(tr, default_album="History")
+            if t_obj:
+                tracks.append(t_obj)
+        return tracks
+
     def get_playlist_tracks(self, playlist_id: str) -> List[Track]:
         """Retrieve tracks from a YouTube Music playlist."""
         if not playlist_id:
             return []
 
+        raw_tracks = []
         try:
             playlist_data = self._ytm.get_playlist(playlist_id)
+            if isinstance(playlist_data, dict):
+                raw_tracks = playlist_data.get("tracks", [])
         except Exception as exc:
-            logger.error("Failed to fetch playlist %s: %s", playlist_id, exc)
-            return []
+            logger.debug("Failed to fetch playlist %s via ytm: %s", playlist_id, exc)
 
-        if not isinstance(playlist_data, dict):
-            return []
+        if not raw_tracks and self.is_authenticated():
+            tv_tracks = self._fetch_tv_playlist_tracks(playlist_id)
+            if tv_tracks:
+                return tv_tracks
 
-        raw_tracks = playlist_data.get("tracks", [])
         if not isinstance(raw_tracks, list):
             return []
 
@@ -340,18 +542,20 @@ class YTMusicClient:
 
     def get_liked_songs(self, limit: int = 50) -> List[Track]:
         """Retrieve user's liked songs from YouTube Music."""
+        raw_tracks = []
         try:
             raw_data = self._ytm.get_liked_songs(limit=limit)
+            if isinstance(raw_data, dict):
+                raw_tracks = raw_data.get("tracks", [])
+            elif isinstance(raw_data, list):
+                raw_tracks = raw_data
         except Exception as exc:
-            logger.debug("Failed to fetch liked songs: %s", exc)
-            return []
+            logger.debug("ytm.get_liked_songs failed: %s; trying TV fallback", exc)
 
-        if isinstance(raw_data, dict):
-            raw_tracks = raw_data.get("tracks", [])
-        elif isinstance(raw_data, list):
-            raw_tracks = raw_data
-        else:
-            return []
+        if not raw_tracks and self.is_authenticated():
+            tv_tracks = self._fetch_tv_liked_songs(limit=limit)
+            if tv_tracks:
+                return tv_tracks
 
         if not isinstance(raw_tracks, list):
             return []
@@ -369,11 +573,16 @@ class YTMusicClient:
 
     def get_library_playlists(self, limit: int = 50) -> List[Dict[str, Any]]:
         """Retrieve playlists from the user's library."""
+        raw_playlists = []
         try:
             raw_playlists = self._ytm.get_library_playlists(limit=limit)
         except Exception as exc:
-            logger.debug("Failed to fetch library playlists: %s", exc)
-            return []
+            logger.debug("ytm.get_library_playlists failed: %s; trying TV fallback", exc)
+
+        if not raw_playlists and self.is_authenticated():
+            tv_playlists = self._fetch_tv_playlists(limit=limit)
+            if tv_playlists:
+                return tv_playlists
 
         if not isinstance(raw_playlists, list):
             return []
@@ -398,11 +607,16 @@ class YTMusicClient:
 
     def get_history(self) -> List[Track]:
         """Retrieve playback history from YouTube Music."""
+        raw_items = []
         try:
             raw_items = self._ytm.get_history()
         except Exception as exc:
-            logger.debug("Failed to fetch history: %s", exc)
-            return []
+            logger.debug("ytm.get_history failed: %s; trying TV fallback", exc)
+
+        if not raw_items and self.is_authenticated():
+            tv_history = self._fetch_tv_history()
+            if tv_history:
+                return tv_history
 
         if not isinstance(raw_items, list):
             return []
@@ -421,11 +635,16 @@ class YTMusicClient:
         if not browse_id or not browse_id.strip():
             return []
 
+        album_data = None
         try:
             album_data = self._ytm.get_album(browse_id.strip())
         except Exception as exc:
             logger.debug("Failed to fetch album tracks for %s: %s", browse_id, exc)
-            return []
+            if self._authenticated:
+                try:
+                    album_data = self._anon.get_album(browse_id.strip())
+                except Exception:
+                    pass
 
         if not isinstance(album_data, dict):
             return []
@@ -461,11 +680,16 @@ class YTMusicClient:
         if not channel_id or not channel_id.strip():
             return []
 
+        artist_data = None
         try:
             artist_data = self._ytm.get_artist(channel_id.strip())
         except Exception as exc:
             logger.debug("Failed to fetch artist top tracks for %s: %s", channel_id, exc)
-            return []
+            if self._authenticated:
+                try:
+                    artist_data = self._anon.get_artist(channel_id.strip())
+                except Exception:
+                    pass
 
         if not isinstance(artist_data, dict):
             return []
@@ -505,11 +729,16 @@ class YTMusicClient:
         if not query or not query.strip():
             return empty_result
 
+        raw_results = None
         try:
             raw_results = self._ytm.search(query.strip(), limit=limit)
         except Exception as exc:
-            logger.debug("search_all failed for query '%s': %s", query, exc)
-            return empty_result
+            logger.debug("search_all failed for query '%s': %s; trying anonymous", query, exc)
+            if self._authenticated:
+                try:
+                    raw_results = self._anon.search(query.strip(), limit=limit)
+                except Exception as exc2:
+                    logger.debug("search_all failed on anonymous catalog: %s", exc2)
 
         if not isinstance(raw_results, list):
             return empty_result
