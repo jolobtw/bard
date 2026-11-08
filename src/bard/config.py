@@ -30,6 +30,8 @@ class BardConfig:
         self.access_token: str = ""
         self.refresh_token: str = ""
         self.token_expiry: float = 0.0
+        self.ytmusic_client_id: str = ""
+        self.ytmusic_client_secret: str = ""
 
         self.load()
 
@@ -47,6 +49,8 @@ class BardConfig:
             self.access_token = data.get("access_token", self.access_token)
             self.refresh_token = data.get("refresh_token", self.refresh_token)
             self.token_expiry = data.get("token_expiry", self.token_expiry)
+            self.ytmusic_client_id = data.get("ytmusic_client_id", self.ytmusic_client_id)
+            self.ytmusic_client_secret = data.get("ytmusic_client_secret", self.ytmusic_client_secret)
         except Exception:
             pass
 
@@ -60,6 +64,8 @@ class BardConfig:
             "access_token": self.access_token,
             "refresh_token": self.refresh_token,
             "token_expiry": self.token_expiry,
+            "ytmusic_client_id": self.ytmusic_client_id,
+            "ytmusic_client_secret": self.ytmusic_client_secret,
         }
         with open(self.config_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
@@ -76,3 +82,14 @@ class BardConfig:
         if not self.access_token:
             return False
         return time.time() >= self.token_expiry
+
+    @property
+    def oauth_path(self) -> Path:
+        """Path to YouTube Music OAuth credentials file."""
+        return self.config_dir / "oauth.json"
+
+    def is_authenticated(self) -> bool:
+        """Check if YouTube Music OAuth tokens are stored and valid."""
+        from bard.oauth import YTMusicOAuth
+
+        return YTMusicOAuth(token_path=self.oauth_path, config=self).is_authenticated()
