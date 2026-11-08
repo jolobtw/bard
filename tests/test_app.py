@@ -1,7 +1,7 @@
 """Test main BardApp creation, bindings, and playback control with YTMusic and AudioPlayer."""
 
 import asyncio
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from bard.config import BardConfig
 from bard.models import Track
 from bard.ui.app import BardApp
@@ -282,3 +282,130 @@ def test_on_progress_tick_does_not_advance_when_user_paused(tmp_path):
             assert app._user_paused is False
 
     asyncio.run(_run())
+
+
+def test_bard_app_drawer_callbacks(tmp_path):
+    """Verify BardApp passes connect and disconnect callbacks to CurtainDrawer."""
+    cfg = BardConfig(config_path=tmp_path / "config.json")
+    mock_client = MagicMock()
+    app = BardApp(cfg, mock_client)
+    assert app.drawer_widget.on_connect_account == app.handle_connect_account
+    assert app.drawer_widget.on_disconnect_account == app.handle_disconnect_account
+
+
+def test_bard_app_handle_connect_account_success(tmp_path):
+    """Verify handle_connect_account acquires device code, polls, and updates drawer & client."""
+    cfg = BardConfig(config_path=tmp_path / "config.json")
+    mock_client = MagicMock()
+    app = BardApp(cfg, mock_client)
+
+    mock_oauth = MagicMock()
+    mock_oauth.get_device_code.return_value = {
+        "device_code": "dev123",
+        "user_code": "ABCD-1234",
+        "verification_url": "https://www.google.com/device",
+        "interval": 1,
+    }
+    mock_oauth.poll_for_token.return_value = {"access_token": "token123"}
+    mock_new_client = MagicMock()
+
+    with patch("bard.ui.app.YTMusicOAuth", return_value=mock_oauth), \
+         patch("bard.ui.app.YTMusicClient", return_value=mock_new_client), \
+         patch("webbrowser.open") as mock_open, \
+         patch.object(app.drawer_widget, "refresh_categories") as mock_refresh, \
+         patch.object(app, "notify") as mock_notify:
+        app.handle_connect_account()
+
+        mock_oauth.get_device_code.assert_called_once()
+        mock_open.assert_called_once_with("https://www.google.com/device")
+        mock_oauth.poll_for_token.assert_called_once_with("dev123", interval=1)
+        assert app.client == mock_new_client
+        assert app.drawer_widget.client == mock_new_client
+        mock_refresh.assert_called_once()
+        assert mock_notify.call_count >= 2
+
+
+def test_bard_app_handle_connect_account_failure(tmp_path):
+    """Verify handle_connect_account failure paths notify user and do not update client."""
+    cfg = BardConfig(config_path=tmp_path / "config.json")
+    mock_client = MagicMock()
+    app = BardApp(cfg, mock_client)
+
+    # Subcase 1: get_device_code fails
+    mock_oauth = MagicMock()
+    mock_oauth.get_device_code.return_value = None
+    with patch("bard.ui.app.YTMusicOAuth", return_value=mock_oauth), \
+         patch.object(app, "notify") as mock_notify:
+        app.handle_connect_account()
+        assert app.client == mock_client
+        mock_notify.assert_called_once()
+        assert "Failed" in mock_notify.call_args[0][0]
+
+    # Subcase 2: poll_for_token fails/times out
+    mock_oauth2 = MagicMock()
+    mock_oauth2.get_device_code.return_value = {
+        "device_code": "dev123",
+        "user_code": "ABCD-1234",
+        "verification_url": "https://www.google.com/device",
+        "interval": 1,
+    }
+    mock_oauth2.poll_for_token.return_value = None
+    with patch("bard.ui.app.YTMusicOAuth", return_value=mock_oauth2), \
+         patch("webbrowser.open"), \
+         patch.object(app, "notify") as mock_notify2:
+        app.handle_connect_account()
+        assert app.client == mock_client
+        assert mock_notify2.call_count >= 2
+        assert "timed out or cancelled" in mock_notify2.call_args_list[-1][0][0]
+
+
+def test_bard_app_handle_connect_account_worker_async(tmp_path):
+    """Verify handle_connect_account works inside running Textual event loop via worker."""
+    async def _run():
+        cfg = BardConfig(config_path=tmp_path / "config.json")
+        mock_client = MagicMock()
+        app = BardApp(cfg, mock_client)
+
+        mock_oauth = MagicMock()
+        mock_oauth.get_device_code.return_value = {
+            "device_code": "dev123",
+            "user_code": "ABCD-1234",
+            "verification_url": "https://www.google.com/device",
+            "interval": 1,
+        }
+        mock_oauth.poll_for_token.return_value = {"access_token": "token123"}
+        mock_new_client = MagicMock()
+
+        with patch("bard.ui.app.YTMusicOAuth", return_value=mock_oauth), \
+             patch("bard.ui.app.YTMusicClient", return_value=mock_new_client), \
+             patch("webbrowser.open"):
+            async with app.run_test():
+                app.handle_connect_account()
+                await asyncio.sleep(0.1)
+                assert app.client == mock_new_client
+                assert app.drawer_widget.client == mock_new_client
+
+    asyncio.run(_run())
+
+
+def test_bard_app_handle_disconnect_account(tmp_path):
+    """Verify handle_disconnect_account clears tokens, creates unauthenticated client, and refreshes drawer."""
+    cfg = BardConfig(config_path=tmp_path / "config.json")
+    mock_client = MagicMock()
+    app = BardApp(cfg, mock_client)
+
+    mock_oauth = MagicMock()
+    mock_anon_client = MagicMock()
+
+    with patch("bard.ui.app.YTMusicOAuth", return_value=mock_oauth), \
+         patch("bard.ui.app.YTMusicClient", return_value=mock_anon_client), \
+         patch.object(app.drawer_widget, "refresh_categories") as mock_refresh, \
+         patch.object(app, "notify") as mock_notify:
+        app.handle_disconnect_account()
+
+        mock_oauth.clear_tokens.assert_called_once()
+        assert app.client == mock_anon_client
+        assert app.drawer_widget.client == mock_anon_client
+        mock_refresh.assert_called_once()
+        mock_notify.assert_called_once_with("Disconnected from YouTube Music.", title="Account")
+

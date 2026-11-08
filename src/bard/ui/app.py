@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import webbrowser
 from typing import Any, Dict, List, Optional
 from textual import work
 from textual.app import App, ComposeResult
@@ -11,9 +12,11 @@ from textual.binding import Binding
 from bard.audio_player import AudioPlayer
 from bard.config import BardConfig
 from bard.models import Track
+from bard.oauth import YTMusicOAuth
 from bard.ui.header import ArcaneHeader
 from bard.ui.zen_stage import ZenStage
 from bard.ui.curtain_drawer import CurtainDrawer
+from bard.ytmusic_client import YTMusicClient
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +56,12 @@ class BardApp(App):
 
         self.header_widget = ArcaneHeader(is_playing=False, device_name="YouTube Music")
         self.stage_widget = ZenStage()
-        self.drawer_widget = CurtainDrawer(self.client, on_play=self.handle_drawer_play)
+        self.drawer_widget = CurtainDrawer(
+            self.client,
+            on_play=self.handle_drawer_play,
+            on_connect_account=self.handle_connect_account,
+            on_disconnect_account=self.handle_disconnect_account,
+        )
 
         self.queue: List[Track] = []
         self.current_index: int = -1
@@ -389,3 +397,93 @@ class BardApp(App):
             except Exception:
                 pass
         self.exit()
+
+    def _safe_call(self, callback: Any, *args: Any, **kwargs: Any) -> Any:
+        """Execute callback on main Textual thread if running in background thread, else directly."""
+        import threading
+        if self._loop is not None and getattr(self, "_thread", None) != threading.current_thread():
+            try:
+                return self.call_from_thread(callback, *args, **kwargs)
+            except RuntimeError:
+                pass
+        return callback(*args, **kwargs)
+
+    def handle_connect_account(self) -> None:
+        """Initiate OAuth 2.0 device pairing workflow."""
+        if self._loop is not None and self.is_running:
+            self._connect_account_worker()
+        else:
+            self._connect_account_sync()
+
+    @work(thread=True, exclusive=True, group="account_pairing")
+    def _connect_account_worker(self) -> None:
+        """Background worker for device code retrieval and token polling."""
+        self._connect_account_sync()
+
+    def _connect_account_sync(self, oauth: Optional[YTMusicOAuth] = None) -> bool:
+        """Core logic for device pairing flow."""
+        if oauth is None:
+            oauth = YTMusicOAuth(config=self.config)
+
+        try:
+            device_data = oauth.get_device_code()
+        except Exception as e:
+            logger.error("Failed to retrieve device code: %s", e)
+            device_data = None
+
+        if not device_data or not device_data.get("device_code") or not device_data.get("user_code"):
+            self._safe_call(
+                self.notify,
+                "Failed to get YouTube Music device pairing code.",
+                title="Pairing Error",
+                severity="error",
+            )
+            return False
+
+        verification_url = device_data.get("verification_url", "https://www.google.com/device")
+        user_code = device_data["user_code"]
+        device_code = device_data["device_code"]
+        interval = device_data.get("interval", 5)
+
+        try:
+            webbrowser.open(verification_url)
+        except Exception:
+            pass
+
+        pairing_msg = f"Pair at {verification_url} with code: {user_code}"
+        self._safe_call(
+            self.notify,
+            pairing_msg,
+            title="YouTube Music Pairing",
+            timeout=15,
+        )
+
+        token_data = oauth.poll_for_token(device_code, interval=interval)
+        if token_data:
+            self.client = YTMusicClient(oauth=oauth)
+            self.drawer_widget.client = self.client
+            self._safe_call(self.drawer_widget.refresh_categories)
+            self._safe_call(
+                self.notify,
+                "Connected to YouTube Music successfully!",
+                title="Account Linked",
+            )
+            return True
+        else:
+            self._safe_call(
+                self.notify,
+                "YouTube Music pairing timed out or cancelled.",
+                title="Pairing Error",
+                severity="error",
+            )
+            return False
+
+    def handle_disconnect_account(self) -> None:
+        """Clear tokens and restore unauthenticated client."""
+        oauth = YTMusicOAuth(config=self.config)
+        oauth.clear_tokens()
+        self.client = YTMusicClient()
+        self.drawer_widget.client = self.client
+        self.drawer_widget.refresh_categories()
+        self.notify("Disconnected from YouTube Music.", title="Account")
+
