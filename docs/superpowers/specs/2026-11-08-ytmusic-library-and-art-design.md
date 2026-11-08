@@ -88,14 +88,16 @@ Users want:
          │    Initialize authenticated YTMusicClient
 ```
 
-1. **Storage**: Credentials stored at `~/.config/bard/oauth.json` (chmod 600 where supported).
+1. **Client Credentials Model (Builder Call)**:
+   - To eliminate Google Cloud Console setup barriers for non-technical users, Bard comes pre-configured with YouTube TV device client credentials for OAuth Device Code pairing, while also allowing custom credentials in `~/.config/bard/config.json` (`youtube_client_id`, `youtube_client_secret`) for advanced users who prefer their own GCP project.
+   - Both tokens and client credentials are saved in `~/.config/bard/oauth.json` so `OAuthCredentials` initializes reliably on every startup.
 2. **Setup CLI**: `bard --login` runs the terminal pairing prompt with Rich formatting and automatically opens the browser.
 3. **In-App Pairing**: Selecting "✦ Connect Account" in the Drawer opens an Arcane pairing overlay on the stage.
-4. **Disconnection**: Option to disconnect removes `oauth.json` and resets client to anonymous mode immediately.
+4. **Disconnection**: Selecting "✦ Disconnect Account" deletes `oauth.json` and resets the client to anonymous mode immediately without restart.
 
 ### 5.2 Personal Library Integration (`YTMusicClient`)
 
-When `YTMusicClient` detects `oauth.json`, it initializes `YTMusic(auth=oauth_filepath)`.
+When `YTMusicClient` detects `oauth.json`, it initializes `YTMusic(auth=oauth_filepath, oauth_credentials=credentials)`.
 New capabilities added to `YTMusicClient`:
 - `is_authenticated() -> bool`: Returns `True` if initialized with valid OAuth credentials.
 - `get_liked_songs(limit: int = 50) -> list[Track]`: Fetches user's liked music.
@@ -104,7 +106,7 @@ New capabilities added to `YTMusicClient`:
 - `get_album_tracks(album_browse_id: str) -> list[Track]`: Fetches full tracklist of a specific album.
 - `get_artist_top_tracks(artist_channel_id: str) -> list[Track]`: Fetches top tracks of an artist.
 
-### 5.3 Drawer Layout & Multi-Type Search (`CurtainDrawer`)
+### 5.3 Drawer Layout, Drill-Down & Multi-Type Search (`CurtainDrawer`)
 
 The left column of the drawer is structured into clear, visually distinct categories:
 
@@ -128,22 +130,20 @@ The left column of the drawer is structured into clear, visually distinct catego
  └──────────────────────────────────┘└───────────────────────────────────────────────┘
 ```
 
-#### Multi-Type Search:
-When typing in Search (`/`):
-- Searches YouTube Music with filters for songs and albums.
-- In the right column, results clearly badge their type (e.g., `[Album]` vs `[Song]`).
-- Clicking an `[Album]` dynamically expands its full tracklist so the user can play any track from that album.
+#### Multi-Type Search & Drill-Down Navigation (Builder Call):
+- When searching via `/`, results present songs, albums, and artists badged cleanly (`[Song]`, `[Album]`, `[Artist]`).
+- Selecting an `[Album]` or playlist drills down into its tracklist.
+- When viewing a drilled-down container, item 0 in the tracklist displays a prominent `[ ◄ Back to Search Results / Playlists ]` header action, and pressing `Backspace` or `Left Arrow` / `h` also steps back cleanly without closing the drawer.
 
-### 5.4 High-Resolution Album Artwork (`art.py` & `ZenStage`)
+### 5.4 High-Resolution Album Artwork & Responsive Stage (`art.py` & `ZenStage`)
 
 1. **Resolution Escalation in URL Fetching**:
    YouTube Music thumbnail URLs typically end with `=w60-h60-l90-rj` or `=w120-h120`. `art.py` inspects the URL and upgrades thumbnail queries to `=w544-h544-l90-rj` (or `=s800`), obtaining native high-definition artwork directly from Google's CDN.
-2. **Expanded Character Grid**:
-   - `width` increased from 32 to **46 character columns**.
-   - `height` increased from 14 to **20 character rows** (equivalent to 40 vertical pixels via upper-half blocks `▀`).
-   - Lanczos downsampling with subtle contrast adjustment prevents dark murky colors and produces vibrant, crisp cover art.
+2. **Responsive Terminal Sizing (Builder Call)**:
+   - On standard/compact terminals (< 32 terminal rows or < 86 columns): Art dynamically renders at a compact 32×14 resolution (stage container 78 cols) to guarantee zero UI clipping or hidden controls.
+   - On standard and maximized terminals (>= 32 terminal rows and >= 86 columns): Art renders in full **46×20 Hero resolution** (equivalent to 40 vertical pixels via upper-half blocks `▀`).
 3. **Adaptive Canvas Alignment**:
-   `ZenStage` centers the 46×20 art block inside the 86-column Arcane stage container with balanced vertical padding.
+   `ZenStage` centers the art block with balanced vertical margins, Lanczos downsampling, and subtle contrast boosting.
 
 ---
 
