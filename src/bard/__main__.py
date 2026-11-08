@@ -3,217 +3,56 @@
 from __future__ import annotations
 
 import sys
-import time
-import webbrowser
-from http.server import BaseHTTPRequestHandler, HTTPServer
-import threading
 from rich.console import Console
 from rich.panel import Panel
 
-from bard.config import BardConfig
-from bard.spotify_client import SpotifyClient, generate_pkce_pair
 from bard.audio_engine import AudioEngine
+from bard.audio_player import AudioPlayer
+from bard.config import BardConfig
 from bard.ui.app import BardApp
+from bard.ytmusic_client import YTMusicClient
 
 console = Console()
 
 
-def run_oauth_flow(config: BardConfig, client: SpotifyClient) -> bool:
-    """Run local loopback server and open browser for one-click OAuth login."""
-    verifier, challenge = generate_pkce_pair()
-    state = "bard_auth_state"
-    auth_code_holder = {"code": None, "error": None}
-    stop_event = threading.Event()
-
-    class CallbackHandler(BaseHTTPRequestHandler):
-        def do_GET(self):
-            if "callback" in self.path:
-                from urllib.parse import parse_qs, urlparse
-                query = parse_qs(urlparse(self.path).query)
-                if "code" in query:
-                    auth_code_holder["code"] = query["code"][0]
-                    self.send_response(200)
-                    self.send_header("Content-Type", "text/html; charset=utf-8")
-                    self.end_headers()
-                    html = """
-                    <html>
-                    <body style="background:#13141C;color:#FF7A00;font-family:sans-serif;text-align:center;padding:50px;">
-                        <h1>✦ BARD AUTHENTICATED ✦</h1>
-                        <p style="color:#A6ADC8;">You may now return to your terminal.</p>
-                    </body>
-                    </html>
-                    """
-                    self.wfile.write(html.encode("utf-8"))
-                else:
-                    auth_code_holder["error"] = query.get("error", ["Unknown error"])[0]
-                    self.send_response(400)
-                    self.end_headers()
-            else:
-                self.send_response(404)
-                self.end_headers()
-
-        def log_message(self, format, *args):
-            pass  # Quiet logging
-
-    class ReusableHTTPServer(HTTPServer):
-        allow_reuse_address = True
-
-    server = None
-    try:
-        server = ReusableHTTPServer(("127.0.0.1", 8888), CallbackHandler)
-        server.timeout = 0.5
-    except Exception as e:
-        console.print(f"[#FFD166]Note: Could not listen on port 8888 ({e}). Manual URL fallback will be available.[/]")
-
-    def serve():
-        while not stop_event.is_set() and not auth_code_holder["code"] and not auth_code_holder["error"]:
-            if server:
-                server.handle_request()
-
-    if server:
-        server_thread = threading.Thread(target=serve, daemon=True)
-        server_thread.start()
-
-    auth_url = client.get_auth_url(challenge, state)
-    console.print("\n[#FF7A00 bold]Opening browser for Spotify Authorization...[/]")
-    console.print(f"[#6C7086]If it doesn't open automatically, visit:\n{auth_url}[/]\n")
-    try:
-        webbrowser.open(auth_url)
-    except Exception:
-        pass
-
-    # Wait up to 60 seconds for auto-redirect or allow manual input
-    start_time = time.time()
-    while time.time() - start_time < 60:
-        if auth_code_holder["code"] or auth_code_holder["error"]:
-            break
-        time.sleep(0.5)
-
-    stop_event.set()
-    if server:
-        try:
-            server.server_close()
-        except Exception:
-            pass
-
-    # Fallback: if auto-redirect did not capture the code, prompt user to paste redirected URL
-    if not auth_code_holder["code"]:
-        console.print("[#FFD166]If your browser opened the callback URL (http://127.0.0.1:8888/callback?code=...) but it didn't complete automatically:[/]")
-        manual_input = console.input("[#FF7A00 bold]Paste the full redirected URL or code from your browser (or press Enter to cancel): [/]").strip()
-        if manual_input:
-            if "code=" in manual_input:
-                from urllib.parse import parse_qs, urlparse
-                query = parse_qs(urlparse(manual_input).query)
-                if "code" in query:
-                    auth_code_holder["code"] = query["code"][0]
-            else:
-                auth_code_holder["code"] = manual_input
-
-    if auth_code_holder["code"]:
-        success = client.exchange_code_for_token(auth_code_holder["code"], verifier)
-        if success:
-            console.print("[#A6E3A1 bold]✓ Successfully logged into Spotify![/]\n")
-            return True
-    return False
-
-
-def ensure_local_desktop_spotify() -> None:
-    """Silently ensure the local machine has the Spotify desktop app active if installed."""
-    import platform
-    import subprocess
-    sys_name = platform.system()
-    try:
-        if sys_name == "Darwin":  # macOS
-            # -g launches quietly in background without stealing window focus from terminal
-            subprocess.Popen(["open", "-g", "-a", "Spotify"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        elif sys_name == "Windows":
-            subprocess.Popen(["cmd", "/c", "start", "spotify:"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except Exception:
-        pass
+def ensure_audio_engine() -> bool:
+    """Check for mpv binary and display friendly installation instructions if missing."""
+    mpv_path = AudioEngine.find_mpv()
+    if not mpv_path:
+        console.print(
+            Panel(
+                "[#FF7A00 bold]mpv media player was not found on your system PATH.[/]\n\n"
+                "[#A6ADC8]Bard requires headless mpv to stream high-fidelity YouTube Music.\n"
+                "Please install mpv:\n"
+                "  • Windows: [#FFD166]winget install mpv.net[/] or [#FFD166]choco install mpv[/]\n"
+                "  • macOS:   [#FFD166]brew install mpv[/]\n"
+                "  • Linux:   [#FFD166]sudo apt install mpv[/]\n",
+                border_style="#FF7A00",
+                title="✦ ❖ BARD AUDIO ENGINE ❖ ✦",
+            )
+        )
+        return False
+    return True
 
 
 def main() -> None:
     """Main launcher."""
     config = BardConfig()
-    client = SpotifyClient(config)
+    ensure_audio_engine()
 
-    # 1. First-Run Setup: Client ID
-    if not config.client_id:
-        welcome_text = (
-            "[#FF7A00 bold]Welcome to Bard — The Arcane Terminal Spotify Player[/]\n\n"
-            "[#A6ADC8]To stream and control your music, Spotify requires a free Client ID from:\n"
-            "[#FFD166 underline]https://developer.spotify.com/dashboard[/]\n\n"
-            "Redirect URI to register: [#FFFFFF bold]http://127.0.0.1:8888/callback[/]"
-        )
-        console.print(Panel(welcome_text, border_style="#FF7A00", title="✦ ❖ BARD SETUP ❖ ✦"))
-        client_id_input = console.input("[#FF7A00 bold]Enter your Spotify Client ID: [/]").strip()
-        if not client_id_input:
-            console.print("[#FF4D4D]Client ID cannot be empty. Exiting.[/]")
-            sys.exit(1)
-        config.client_id = client_id_input
-        config.save()
+    client = YTMusicClient()
+    player = AudioPlayer()
 
-    # 2. First-Run Setup: OAuth Login
-    if config.is_token_expired():
-        if not config.refresh_token or not client.refresh_access_token():
-            console.print("[#FF7A00]Spotify login required.[/]")
-            ok = run_oauth_flow(config, client)
-            if not ok:
-                console.print("[#FF4D4D]Authentication failed or timed out. Please try again.[/]")
-                sys.exit(1)
-
-    # 3. Audio Engine Background Streaming Daemon
-    engine = AudioEngine(device_name=config.device_name, client_id=config.client_id)
-    if engine.is_installed():
-        if not engine.has_credentials():
-            console.print("\n[#FF7A00 bold]✦ Standalone Audio Engine Pairing ✦[/]")
-            console.print("[#A6ADC8]To stream music directly in your terminal without any Spotify app open,\nBard needs a one-time link with your Spotify account.[/]\n")
-
-            def show_pair_info(url: str, code: str):
-                msg = (
-                    f"[#FFFFFF bold]Pairing Code:[/] [#FFD166 bold]{code}[/]\n\n"
-                    f"[#A6ADC8]Opening browser to:[/] [#FF7A00 underline]{url}[/]\n"
-                    f"[#6C7086]If it doesn't open automatically, visit the URL above to approve.[/]"
-                )
-                console.print(Panel(msg, border_style="#FF7A00", title="✦ SPOTIFY CONNECT PAIRING ✦"))
-                try:
-                    webbrowser.open(url)
-                except Exception:
-                    pass
-
-            console.print("[#6C7086]Waiting for one-time Spotify pairing approval...[/]")
-            ok = engine.authenticate(on_pair_url=show_pair_info)
-            if ok:
-                console.print("[#A6E3A1 bold]✓ Successfully paired standalone player with Spotify![/]\n")
-            else:
-                console.print("[#FFD166]Pairing failed or timed out. Continuing with any available Spotify player...[/]\n")
-
-        if engine.start():
-            import os
-            exe_name = os.path.basename(engine.get_executable_path())
-            console.print(f"[#A6E3A1 bold]✓ Standalone audio engine ({exe_name}) started in background.[/]")
-            time.sleep(2)
-        else:
-            console.print("[#FFD166]Warning: Standalone audio engine could not be started in background.[/]")
-            ensure_local_desktop_spotify()
-            time.sleep(1)
-    else:
-        # If no standalone daemon installed, silently wake local desktop Spotify if present
-        ensure_local_desktop_spotify()
-        time.sleep(1)
-
-    # 4. Launch Textual App
     app = None
     try:
-        app = BardApp(config, client)
+        app = BardApp(config=config, client=client, player=player)
         app.run()
     finally:
-        if app and getattr(app, "bard_device_id", None):
+        if player:
             try:
-                client.pause(device_id=app.bard_device_id)
+                player.close()
             except Exception:
                 pass
-        engine.stop()
 
 
 if __name__ == "__main__":

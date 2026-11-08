@@ -128,9 +128,24 @@ class ZenStage(Widget):
                 if name:
                     status_widget.update(f"[#6C7086]Ready to stream • {name}[/]")
                 else:
-                    status_widget.update("[#FFD166]No active Spotify player • Open Spotify or install librespot[/]")
+                    status_widget.update("[#6C7086]Ready to stream • YouTube Music / Standalone[/]")
             except Exception:
                 pass
+
+    def update_track(self, track: Optional[Dict[str, Any]]) -> None:
+        """Update stage with a newly selected track dictionary."""
+        if track:
+            data = dict(self.playback_data) if self.playback_data else {}
+            data.update(track)
+            if "duration_ms" not in data and "duration_seconds" in data:
+                data["duration_ms"] = (data.get("duration_seconds") or 0) * 1000
+            data["is_playing"] = data.get("is_playing", True)
+            data["progress_ms"] = data.get("progress_ms", 0)
+            if "device_name" not in data:
+                data["device_name"] = self.device_name or "YouTube Music / Standalone"
+            self.update_playback(data)
+        else:
+            self.update_playback(None)
 
     def compose(self) -> ComposeResult:
         with Center():
@@ -205,12 +220,12 @@ class ZenStage(Widget):
             if self.device_name:
                 status_widget.update(f"[#6C7086]Ready to stream • {self.device_name}[/]")
             else:
-                status_widget.update("[#FFD166]No active Spotify player • Open Spotify or install librespot[/]")
+                status_widget.update("[#6C7086]Ready to stream • YouTube Music / Standalone[/]")
             hint_widget.update(
                 Text.assemble(
-                    (" [Tab] Playlists ", "on #262938 bold #FFD166"),
+                    (" [Tab] Explore ", "on #262938 bold #FFD166"),
                     ("   ", ""),
-                    (" [Space] Resume ", "on #262938 bold #A6ADC8"),
+                    (" [Space] Play/Pause ", "on #262938 bold #A6ADC8"),
                     ("   ", ""),
                     (" [Q] Quit ", "on #262938 bold #6C7086"),
                 )
@@ -244,11 +259,11 @@ class ZenStage(Widget):
         )
         transport_widget.update(transport_markup)
 
-        # Dedicated status strip: volume & device
+        # Dedicated status strip: volume & audio engine
         status_markup = (
             f"[#6C7086]Volume:[/] [bold #FFD166]{volume}%[/] [#6C7086][- / +][/]     "
             f"[#2E3244]•[/]     "
-            f"[#6C7086]Audio Output:[/] [bold #FFD166]{device_name}[/]"
+            f"[#6C7086]Audio Engine:[/] [bold #FFD166]{device_name}[/]"
         )
         status_widget.update(status_markup)
 
@@ -256,7 +271,7 @@ class ZenStage(Widget):
         hint_widget.update(
             Text.assemble(
                 (" [Tab] ", "on #262938 bold #FFD166"),
-                (" Playlists    ", "#6C7086"),
+                (" Explore    ", "#6C7086"),
                 (" [Space] ", "on #262938 bold #FFD166"),
                 (" Play/Pause    ", "#6C7086"),
                 (" [Q] ", "on #262938 bold #FFD166"),

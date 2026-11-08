@@ -72,7 +72,7 @@ class BardConfig:
         self.token_expiry = time.time() + expires_in - 60  # 60s safety buffer
 
     def is_token_expired(self) -> bool:
-        """Check if current access token is missing or expired."""
+        """Check if current access token is expired (returns False if tokens are not configured)."""
         if not self.access_token:
-            return True
+            return False
         return time.time() >= self.token_expiry
