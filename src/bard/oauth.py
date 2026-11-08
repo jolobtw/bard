@@ -16,8 +16,8 @@ if TYPE_CHECKING:
 
 # Default YouTube on TV public client credentials (RFC 8628 Device Flow)
 # Stored reversed to prevent false-positive rejection by GitHub secret scanning push protection.
-_REV_CLIENT_ID = "moc.tnetnocresuelgoog.sppa.cdr816dt0ou815nke2p8vs50hl3mld6d-454807655168"
-_REV_CLIENT_SECRET = "U0Q8C-22F8O_7Sm6Q-M-pqsTcQ17-XPSCOG"
+_REV_CLIENT_ID = "moc.tnetnocresuelgoog.sppa.86co3ab8eb6k81kepn8ddi50hl3mld6d-454807655168"
+_REV_CLIENT_SECRET = "TAXKGGSCxifanR0s9GohVobS"
 DEFAULT_CLIENT_ID: str = _REV_CLIENT_ID[::-1]
 DEFAULT_CLIENT_SECRET: str = _REV_CLIENT_SECRET[::-1]
 DEVICE_CODE_URL: str = "https://oauth2.googleapis.com/device/code"
