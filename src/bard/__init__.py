@@ -4,9 +4,17 @@ from __future__ import annotations
 
 import os
 
-# On macOS, Python often lacks trusted root certificates unless Install Certificates.command
-# was manually executed. Point SSL_CERT_FILE and REQUESTS_CA_BUNDLE to certifi's bundle so
-# HTTPS requests to Google OAuth and YouTube Music succeed seamlessly out of the box.
+# 1. On macOS and Windows, hook into the operating system's native certificate store
+# (Keychain on macOS, CryptoAPI on Windows). This avoids SSL verification failures
+# regardless of how Python was installed (Homebrew, python.org, Xcode, or pyenv).
+try:
+    import truststore
+
+    truststore.inject_into_ssl()
+except Exception:
+    pass
+
+# 2. Point SSL_CERT_FILE and REQUESTS_CA_BUNDLE to certifi's bundle as a fallback.
 try:
     import certifi
 
