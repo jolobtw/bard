@@ -10,6 +10,7 @@ from typing import Optional, Sequence
 from rich.console import Console
 from rich.panel import Panel
 
+from bard import __version__
 from bard.audio_engine import AudioEngine
 from bard.audio_player import AudioPlayer
 from bard.config import BardConfig
@@ -116,6 +117,12 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     parser = argparse.ArgumentParser(
         prog="bard",
         description="Bard - Arcane Terminal YouTube Music Player",
+    )
+    parser.add_argument(
+        "-v",
+        "--version",
+        action="version",
+        version=f"Bard v{__version__}",
     )
     parser.add_argument(
         "--login",

@@ -6,6 +6,7 @@ from typing import List, Optional
 from textual.widgets import Static
 from rich.text import Text
 
+from bard import __version__
 from bard.arcane_theme import format_rich_header, load_theme
 
 
@@ -24,10 +25,16 @@ class ArcaneHeader(Static):
     }
     """
 
-    def __init__(self, is_playing: bool = False, device_name: str = "Bard"):
+    def __init__(
+        self,
+        is_playing: bool = False,
+        device_name: str = "Bard",
+        version: Optional[str] = None,
+    ):
         super().__init__()
         self.is_playing = is_playing
         self.device_name = device_name
+        self.version = version or __version__
         self.theme = load_theme()
 
     def update_status(self, is_playing: bool, device_name: Optional[str] = None) -> None:
@@ -52,5 +59,6 @@ class ArcaneHeader(Static):
             badges=badges,
             width=width,
             theme=self.theme,
+            version=self.version,
         )
         return Text.from_markup(markup)

@@ -108,3 +108,12 @@ def test_main_cli_args_login_and_logout():
     mock_logout.assert_called_once()
     assert exc_info.value.code == 0
 
+
+def test_main_cli_arg_version(capsys):
+    """Verify --version flag prints Bard version and exits cleanly."""
+    with patch("sys.argv", ["bard", "--version"]), pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    assert "Bard v0.2.0" in captured.out or "Bard v0.2.0" in captured.err
+

@@ -150,10 +150,11 @@ def format_rich_header(
     badges: List[str] | None = None,
     width: int = 100,
     theme: Dict[str, Any] | None = None,
+    version: str | None = None,
 ) -> str:
     """
     Renders the exact 2-row Arcane header matching Tome:
-    Row 1: [Star] [❖ TITLE] [❖] [Tagline]   ...badges...
+    Row 1: [Star] [❖ TITLE] [v0.2.0] [❖] [Tagline]   ...badges...
     Row 2: Horizontal rule in muted border color
     """
     th = theme or load_theme()
@@ -166,10 +167,12 @@ def format_rich_header(
     grad = hdr.get("title_gradient", ["#FF4500", "#FFD166"])
     title_rendered = render_rich_gradient(title_text, grad[0], grad[1])
 
+    version_rendered = f" [{pal.get('text_muted', '#6C7086')}]v{version}[/]" if version else ""
+
     sep = f"[{hdr.get('separator_color', '#6C7086')}]{hdr.get('separator_glyph', '❖')}[/]"
     tagline_rendered = f"[{hdr.get('tagline_color', '#6C7086')} italic]{tagline}[/]"
 
-    left_markup = f"{star} {title_rendered} {sep} {tagline_rendered}"
+    left_markup = f"{star} {title_rendered}{version_rendered} {sep} {tagline_rendered}"
 
     # Render badges on right
     rendered_badges = []
