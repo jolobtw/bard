@@ -2,7 +2,13 @@
 
 import io
 from PIL import Image
-from bard.art import image_to_ansi, render_album_art, render_sigil_art
+from bard.art import (
+    fetch_image,
+    image_to_ansi,
+    render_album_art,
+    render_sigil_art,
+    upgrade_thumbnail_url,
+)
 
 
 def test_image_to_ansi():
@@ -62,5 +68,50 @@ def test_render_album_art_ssl_error_self_healing():
         assert "\u2580" in res
         assert "ARCANE RESONANCE" not in res
         assert call_count >= 2
+
+
+def test_upgrade_thumbnail_url_rewrites_dimensions():
+    low_res = "https://yt3.googleusercontent.com/abc=w60-h60-l90-rj"
+    high_res = upgrade_thumbnail_url(low_res, target_size=544)
+    assert "=w544-h544" in high_res
+
+
+def test_upgrade_thumbnail_url_handles_s_param():
+    low_res = "https://lh3.googleusercontent.com/xyz=s120"
+    high_res = upgrade_thumbnail_url(low_res, target_size=544)
+    assert "=s544" in high_res or "=w544-h544" in high_res
+
+
+def test_fetch_image_calls_upgrade_thumbnail():
+    from unittest.mock import patch
+    with patch("requests.get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.content = b"fake-bytes"
+        content = fetch_image("https://lh3.googleusercontent.com/xyz=s120")
+        assert content == b"fake-bytes"
+        mock_get.assert_called_once()
+        args, kwargs = mock_get.call_args
+        assert "=s544" in args[0]
+
+
+
+def test_upgrade_thumbnail_url_non_matching_url():
+    url = "https://example.com/cover.jpg"
+    assert upgrade_thumbnail_url(url) == url
+
+
+def test_render_album_art_hero_dimensions():
+    # Should render 46 chars wide by 20 rows high
+    ansi = render_album_art("", width=46, height=20)
+    lines = ansi.split("\n")
+    assert len(lines) == 20
+
+
+def test_render_album_art_default_hero_dimensions():
+    # Default without explicit dimensions should now be 20 rows high
+    ansi = render_album_art("")
+    lines = ansi.split("\n")
+    assert len(lines) == 20
+
 
 

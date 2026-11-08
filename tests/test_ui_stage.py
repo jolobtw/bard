@@ -60,3 +60,73 @@ def test_zen_stage_empty_state_rendering():
 
     asyncio.run(_test())
 
+
+def test_zen_stage_responsive_art_sizing():
+    from textual.app import App, ComposeResult
+    from bard.ui.zen_stage import ZenStage
+    import asyncio
+
+    class TestApp(App):
+        def compose(self) -> ComposeResult:
+            yield ZenStage()
+
+    async def _test():
+        # Compact terminal (<32 height or <86 width)
+        app_compact = TestApp()
+        async with app_compact.run_test(size=(80, 24)):
+            stage = app_compact.query_one(ZenStage)
+            assert stage.get_art_dimensions() == (32, 14)
+
+        # Hero terminal (>=32 height and >=86 width)
+        app_hero = TestApp()
+        async with app_hero.run_test(size=(100, 40)):
+            stage = app_hero.query_one(ZenStage)
+            assert stage.get_art_dimensions() == (46, 20)
+
+    asyncio.run(_test())
+
+
+def test_zen_stage_responsive_playback_rendering():
+    from textual.app import App, ComposeResult
+    from bard.ui.zen_stage import ZenStage
+    import asyncio
+
+    class TestApp(App):
+        def compose(self) -> ComposeResult:
+            yield ZenStage()
+
+    async def _test():
+        # Compact terminal: art lines should be 14 rows
+        app_compact = TestApp()
+        async with app_compact.run_test(size=(80, 24)):
+            stage = app_compact.query_one(ZenStage)
+            stage.update_playback({
+                "title": "Song 1",
+                "artist": "Artist 1",
+                "album": "Album 1",
+                "duration_ms": 180000,
+                "progress_ms": 30000,
+                "is_playing": True,
+                "album_art_url": "",
+            })
+            assert len(stage._cached_art_ansi.split("\n")) == 14
+
+        # Hero terminal: art lines should be 20 rows
+        app_hero = TestApp()
+        async with app_hero.run_test(size=(100, 40)):
+            stage = app_hero.query_one(ZenStage)
+            stage.update_playback({
+                "title": "Song 1",
+                "artist": "Artist 1",
+                "album": "Album 1",
+                "duration_ms": 180000,
+                "progress_ms": 30000,
+                "is_playing": True,
+                "album_art_url": "",
+            })
+            assert len(stage._cached_art_ansi.split("\n")) == 20
+
+    asyncio.run(_test())
+
+
+

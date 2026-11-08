@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 from typing import Dict, Optional, Tuple
 from PIL import Image
 import requests
@@ -18,7 +19,16 @@ except Exception:
 _ART_CACHE: Dict[Tuple[str, int, int], str] = {}
 
 
-def image_to_ansi(img: Image.Image, width: int = 28, height: int = 14) -> str:
+def upgrade_thumbnail_url(url: str, target_size: int = 544) -> str:
+    """Rewrite Google / YouTube thumbnail URL to request high-resolution (native target_size x target_size)."""
+    if not url:
+        return url
+    url = re.sub(r"=w\d+-h\d+", f"=w{target_size}-h{target_size}", url)
+    url = re.sub(r"=s\d+", f"=s{target_size}", url)
+    return url
+
+
+def image_to_ansi(img: Image.Image, width: int = 46, height: int = 20) -> str:
     """
     Convert a PIL image into a high-density 24-bit TrueColor ANSI half-block string.
     Each character cell represents 2 vertical pixels using the upper-half block (▀),
@@ -49,7 +59,7 @@ def image_to_ansi(img: Image.Image, width: int = 28, height: int = 14) -> str:
     return "\n".join(lines)
 
 
-def render_sigil_art(width: int = 32, height: int = 12) -> str:
+def render_sigil_art(width: int = 46, height: int = 20) -> str:
     """Render a mystical 24-bit TrueColor Arcane musical sigil emblem."""
     bg_ansi = "\x1b[48;2;24;26;36m"
     gold = "\x1b[38;2;255;209;102m"
@@ -74,13 +84,14 @@ def render_sigil_art(width: int = 32, height: int = 12) -> str:
         f"{muted}✧  {gold}ARCANE RESONANCE  {muted}✧",
     ]
 
-    import re
     ansi_escape = re.compile(r'\x1b\[[0-9;]*m')
 
-    # Truncate or pad lines to fit target height
-    lines = sigil_lines[:height]
-    while len(lines) < height:
-        lines.append("")
+    if len(sigil_lines) < height:
+        top_pad = (height - len(sigil_lines)) // 2
+        bottom_pad = height - len(sigil_lines) - top_pad
+        lines = [""] * top_pad + sigil_lines + [""] * bottom_pad
+    else:
+        lines = sigil_lines[:height]
 
     formatted = []
     for line in lines:
@@ -93,14 +104,16 @@ def render_sigil_art(width: int = 32, height: int = 12) -> str:
     return "\n".join(formatted)
 
 
-def render_placeholder(width: int = 28, height: int = 14) -> str:
+def render_placeholder(width: int = 46, height: int = 20) -> str:
     """Render an aesthetic Arcane placeholder when no artwork is present."""
     return render_sigil_art(width=width, height=height)
 
 
-
 def _safe_fetch_image_bytes(url: str, timeout: int = 5) -> Optional[bytes]:
     """Fetch raw image bytes with automatic SSL certificate verification self-healing."""
+    if not url:
+        return None
+    url = upgrade_thumbnail_url(url)
     try:
         resp = requests.get(url, timeout=timeout)
         if resp.status_code == 200:
@@ -126,11 +139,17 @@ def _safe_fetch_image_bytes(url: str, timeout: int = 5) -> Optional[bytes]:
     return None
 
 
-def render_album_art(url: str, width: int = 28, height: int = 14) -> str:
+def fetch_image(url: str, timeout: int = 5) -> Optional[bytes]:
+    """Fetch raw image bytes with thumbnail upgrading and automatic SSL certificate verification self-healing."""
+    return _safe_fetch_image_bytes(url, timeout=timeout)
+
+
+def render_album_art(url: str, width: int = 46, height: int = 20) -> str:
     """Fetch and convert album art URL into ANSI block mosaic with caching."""
     if not url:
         return render_placeholder(width, height)
 
+    url = upgrade_thumbnail_url(url)
     cache_key = (url, width, height)
     if cache_key in _ART_CACHE:
         return _ART_CACHE[cache_key]

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Center, Vertical
@@ -57,6 +57,7 @@ class ZenStage(Widget):
 
     #stage-container {
         width: 86;
+        max-width: 92;
         height: auto;
         border: round #FF7A00;
         background: #181A24;
@@ -117,7 +118,35 @@ class ZenStage(Widget):
         self._current_progress_ms: int = 0
         self._last_art_url: str = ""
         self._cached_art_ansi: str = ""
+        self._last_rendered_dims: Optional[Tuple[int, int]] = None
         self.device_name: Optional[str] = None
+
+    def get_art_dimensions(self) -> Tuple[int, int]:
+        """Compute responsive album art dimensions based on current widget/screen dimensions."""
+        width = self.size.width
+        height = self.size.height
+        if not width or not height:
+            if self.app:
+                width = width or self.app.size.width
+                height = height or self.app.size.height
+        if height < 32 or width < 86:
+            return (32, 14)
+        return (46, 20)
+
+    def on_resize(self, event: Any = None) -> None:
+        """Handle resize to adapt album art dimensions dynamically."""
+        if self.playback_data:
+            art_w, art_h = self.get_art_dimensions()
+            if self._last_rendered_dims != (art_w, art_h):
+                art_url = self.playback_data.get("album_art_url", "")
+                self._last_rendered_dims = (art_w, art_h)
+                self._cached_art_ansi = render_album_art(art_url, width=art_w, height=art_h)
+                if self.is_mounted:
+                    try:
+                        art_widget = self.query_one("#art-box", Static)
+                        art_widget.update(Text.from_ansi(self._cached_art_ansi))
+                    except Exception:
+                        pass
 
     def set_device_name(self, name: Optional[str]) -> None:
         """Update active output device name."""
@@ -160,19 +189,22 @@ class ZenStage(Widget):
                 yield Static(id="controls-hint")
 
     def update_playback(self, data: Optional[Dict[str, Any]]) -> None:
-        """Update stage with fresh playback data from Spotify."""
+        """Update stage with fresh playback data from YouTube Music or Spotify."""
         self.playback_data = data
         if data:
             self._current_progress_ms = data.get("progress_ms", 0)
             art_url = data.get("album_art_url", "")
+            art_w, art_h = self.get_art_dimensions()
             needs_render = (
                 art_url != self._last_art_url
                 or not self._cached_art_ansi
                 or ("ARCANE RESONANCE" in self._cached_art_ansi and art_url)
+                or self._last_rendered_dims != (art_w, art_h)
             )
             if needs_render:
                 self._last_art_url = art_url
-                self._cached_art_ansi = render_album_art(art_url, width=32, height=14)
+                self._last_rendered_dims = (art_w, art_h)
+                self._cached_art_ansi = render_album_art(art_url, width=art_w, height=art_h)
         self.refresh_stage()
 
     def tick_progress(self, delta_ms: int = 1000) -> None:
