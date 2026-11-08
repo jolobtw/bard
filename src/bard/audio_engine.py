@@ -40,16 +40,22 @@ class AudioEngine:
         is_win = platform.system() == "Windows"
         self.is_win = is_win
 
-        # Look for librespot or go-librespot
+        # Look for mpv, librespot, or go-librespot
         if is_win:
-            if (self.bin_dir / "librespot.exe").exists():
+            if (self.bin_dir / "mpv.com").exists():
+                self.binary_name = "mpv.com"
+            elif (self.bin_dir / "mpv.exe").exists():
+                self.binary_name = "mpv.exe"
+            elif (self.bin_dir / "librespot.exe").exists():
                 self.binary_name = "librespot.exe"
             elif (self.bin_dir / "go-librespot.exe").exists():
                 self.binary_name = "go-librespot.exe"
             else:
                 self.binary_name = "librespot.exe"
         else:
-            if (self.bin_dir / "librespot").exists():
+            if (self.bin_dir / "mpv").exists():
+                self.binary_name = "mpv"
+            elif (self.bin_dir / "librespot").exists():
                 self.binary_name = "librespot"
             elif (self.bin_dir / "go-librespot").exists():
                 self.binary_name = "go-librespot"
@@ -60,11 +66,29 @@ class AudioEngine:
         self._process: Optional[subprocess.Popen] = None
         atexit.register(self.stop)
 
+    @classmethod
+    def find_mpv(cls, bin_dir: Optional[Path] = None) -> Optional[str]:
+        """Find mpv binary in bin_dir (~/.config/bard/bin) or system PATH."""
+        base_dir = bin_dir or (get_default_config_dir() / "bin")
+        candidates = ["mpv.com", "mpv.exe", "mpv"] if platform.system() == "Windows" else ["mpv"]
+        for name in candidates:
+            local = base_dir / name
+            if local.exists():
+                return str(local)
+            sys_path = shutil.which(name)
+            if sys_path:
+                return sys_path
+        return None
+
+    def get_mpv_path(self) -> Optional[str]:
+        """Return path to mpv executable."""
+        return self.find_mpv(self.bin_dir)
+
     def is_installed(self) -> bool:
         """Check if streaming engine binary exists."""
         if self.binary_path.exists():
             return True
-        for name in ("librespot", "go-librespot", "librespot.exe", "go-librespot.exe"):
+        for name in ("mpv.com", "mpv.exe", "mpv", "librespot", "go-librespot", "librespot.exe", "go-librespot.exe"):
             if (self.bin_dir / name).exists() or shutil.which(name) is not None:
                 return True
         return False
@@ -73,7 +97,7 @@ class AudioEngine:
         """Return path to executable (local bin or system PATH)."""
         if self.binary_path.exists():
             return str(self.binary_path)
-        for name in ("librespot", "go-librespot", "librespot.exe", "go-librespot.exe"):
+        for name in ("mpv.com", "mpv.exe", "mpv", "librespot", "go-librespot", "librespot.exe", "go-librespot.exe"):
             p_local = self.bin_dir / name
             if p_local.exists():
                 return str(p_local)
@@ -81,6 +105,11 @@ class AudioEngine:
             if p_sys:
                 return p_sys
         return str(self.binary_path)
+
+    def is_mpv(self) -> bool:
+        """Check if the resolved streaming engine is mpv."""
+        exe = self.get_executable_path()
+        return "mpv" in os.path.basename(exe).lower()
 
     def is_go_librespot(self) -> bool:
         """Check if the resolved streaming engine is go-librespot."""
@@ -281,6 +310,8 @@ autoplay = false
         """Construct command arguments for the daemon."""
         exe = self.get_executable_path()
         basename = os.path.basename(exe).lower()
+        if "mpv" in basename:
+            return [exe, "--no-video", "--idle=yes"]
         if "go-librespot" in basename:
             return [
                 exe,

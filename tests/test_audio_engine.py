@@ -107,3 +107,24 @@ def test_audio_engine_authenticate_device_auth_captures_url(tmp_path: Path):
         assert result is True
 
 
+def test_audio_engine_mpv_discovery(tmp_path: Path):
+    engine = AudioEngine(bin_dir=tmp_path)
+    mpv_file = "mpv.com" if platform.system() == "Windows" else "mpv"
+    (tmp_path / mpv_file).touch()
+
+    # Re-initialize with mpv file present in bin_dir
+    engine_with_mpv = AudioEngine(bin_dir=tmp_path)
+    assert engine_with_mpv.binary_name == mpv_file
+    assert engine_with_mpv.is_installed() is True
+    assert engine_with_mpv.is_mpv() is True
+    assert engine_with_mpv.get_mpv_path() == str(tmp_path / mpv_file)
+    assert "--no-video" in engine_with_mpv.build_launch_args()
+
+
+def test_audio_engine_find_mpv_system_path(tmp_path: Path):
+    with patch("shutil.which", return_value="/mock/path/mpv"):
+        found = AudioEngine.find_mpv(bin_dir=tmp_path)
+        assert found == "/mock/path/mpv"
+
+
+
