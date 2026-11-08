@@ -439,18 +439,28 @@ class CurtainDrawer(Widget):
             tlist.clear_options()
 
             if not self.tracks:
-                tlist.add_option(Option(Text("  No tracks found", style="#6C7086 italic"), disabled=True))
+                tlist.add_option(Option(Text("  ✦ No tracks found", style="#6C7086 italic"), disabled=True))
             else:
                 for idx, t in enumerate(self.tracks):
-                    raw_title = t.title or "Unknown Track"
-                    raw_artist = t.artist or "Unknown Artist"
+                    raw_title = (t.title or "Unknown Track").strip()
+                    raw_artist = (t.artist or "Unknown Artist").strip()
                     dur = _format_duration(t.duration_seconds)
 
-                    clean_title = f"{raw_title[:30]}..." if len(raw_title) > 33 else raw_title
-                    clean_artist = f"{raw_artist[:20]}..." if len(raw_artist) > 23 else raw_artist
+                    # Truncate title and artist only if extraordinarily long to prevent layout issues
+                    max_title_len = 70
+                    clean_title = f"{raw_title[:max_title_len - 3]}..." if len(raw_title) > max_title_len else raw_title
 
-                    label = f" {idx+1:>2}.  {clean_title:<33}  {clean_artist:<23}  {dur:>5}"
-                    tlist.add_option(Option(Text(label, no_wrap=True), id=str(idx)))
+                    max_artist_len = 50
+                    clean_artist = f"{raw_artist[:max_artist_len - 3]}..." if len(raw_artist) > max_artist_len else raw_artist
+
+                    opt_text = Text(no_wrap=True)
+                    opt_text.append(f" {idx+1:>2}.  ", style="bold #FF7A00")
+                    opt_text.append(f"{clean_title}\n", style="bold #FFFFFF")
+                    opt_text.append(f"      {clean_artist}", style="#A6ADC8")
+                    opt_text.append("  •  ", style="#6C7086")
+                    opt_text.append(f"{dur}", style="#FFD166")
+
+                    tlist.add_option(Option(opt_text, id=str(idx)))
 
             self._update_column_headers()
         except Exception:

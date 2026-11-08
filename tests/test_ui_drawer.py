@@ -66,9 +66,11 @@ def test_drawer_loads_trending_on_open():
             tlist = drawer.query_one("#track-list", OptionList)
             assert tlist.option_count == 2
             first_prompt = str(tlist.get_option_at_index(0).prompt)
-            assert "Enemy" in first_prompt
-            assert "Imagine Dragons" in first_prompt
-            assert "02:53" in first_prompt
+            lines = first_prompt.split("\n")
+            assert len(lines) == 2
+            assert "Enemy" in lines[0]
+            assert "Imagine Dragons" in lines[1]
+            assert "02:53" in lines[1]
 
     asyncio.run(_test())
 
