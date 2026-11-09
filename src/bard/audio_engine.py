@@ -42,10 +42,10 @@ class AudioEngine:
 
         # Look for mpv, librespot, or go-librespot
         if is_win:
-            if (self.bin_dir / "mpv.com").exists():
-                self.binary_name = "mpv.com"
-            elif (self.bin_dir / "mpv.exe").exists():
+            if (self.bin_dir / "mpv.exe").exists():
                 self.binary_name = "mpv.exe"
+            elif (self.bin_dir / "mpv.com").exists():
+                self.binary_name = "mpv.com"
             elif (self.bin_dir / "librespot.exe").exists():
                 self.binary_name = "librespot.exe"
             elif (self.bin_dir / "go-librespot.exe").exists():
@@ -70,7 +70,7 @@ class AudioEngine:
     def find_mpv(cls, bin_dir: Optional[Path] = None) -> Optional[str]:
         """Find mpv binary in bin_dir (~/.config/bard/bin) or system PATH."""
         base_dir = bin_dir or (get_default_config_dir() / "bin")
-        candidates = ["mpv.com", "mpv.exe", "mpv"] if platform.system() == "Windows" else ["mpv"]
+        candidates = ["mpv.exe", "mpv.com", "mpv"] if platform.system() == "Windows" else ["mpv"]
         for name in candidates:
             local = base_dir / name
             if local.exists():
@@ -392,8 +392,20 @@ autoplay = false
         if self._process and self._process.poll() is None:
             try:
                 self._process.terminate()
-                self._process.wait(timeout=2)
+                self._process.wait(timeout=1.0)
             except Exception:
+                pass
+            if self._process and self._process.poll() is None:
+                if self.is_win:
+                    try:
+                        subprocess.run(
+                            ["taskkill", "/F", "/T", "/PID", str(self._process.pid)],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            timeout=1.5,
+                        )
+                    except Exception:
+                        pass
                 try:
                     self._process.kill()
                 except Exception:

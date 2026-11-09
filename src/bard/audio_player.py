@@ -39,9 +39,85 @@ class AudioPlayer:
         self._socket: Optional[socket.socket] = None
         self._lock = threading.Lock()
         self._request_id = 0
+        self._job_handle: Any = None
 
         self._start_process()
         atexit.register(self.close)
+
+    def _assign_to_job(self) -> None:
+        """On Windows, assign mpv subprocess to a Job Object configured to kill children when closed."""
+        if not self.is_win or not self._process:
+            return
+        pid = getattr(self._process, "pid", None)
+        if not isinstance(pid, int):
+            return
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+            if not getattr(self, "_job_handle", None):
+                h_job = kernel32.CreateJobObjectW(None, None)
+                if not h_job:
+                    return
+                self._job_handle = h_job
+
+                class JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
+                    _fields_ = [
+                        ("PerProcessUserTimeLimit", wintypes.LARGE_INTEGER),
+                        ("PerJobUserTimeLimit", wintypes.LARGE_INTEGER),
+                        ("LimitFlags", wintypes.DWORD),
+                        ("MinimumWorkingSetSize", ctypes.c_size_t),
+                        ("MaximumWorkingSetSize", ctypes.c_size_t),
+                        ("ActiveProcessLimit", wintypes.DWORD),
+                        ("Affinity", ctypes.c_size_t),
+                        ("PriorityClass", wintypes.DWORD),
+                        ("SchedulingClass", wintypes.DWORD),
+                    ]
+
+                class IO_COUNTERS(ctypes.Structure):
+                    _fields_ = [
+                        ("ReadOperationCount", ctypes.c_ulonglong),
+                        ("WriteOperationCount", ctypes.c_ulonglong),
+                        ("OtherOperationCount", ctypes.c_ulonglong),
+                        ("ReadTransferCount", ctypes.c_ulonglong),
+                        ("WriteTransferCount", ctypes.c_ulonglong),
+                        ("OtherTransferCount", ctypes.c_ulonglong),
+                    ]
+
+                class JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
+                    _fields_ = [
+                        ("BasicLimitInformation", JOBOBJECT_BASIC_LIMIT_INFORMATION),
+                        ("IoInfo", IO_COUNTERS),
+                        ("ProcessMemoryLimit", ctypes.c_size_t),
+                        ("JobMemoryLimit", ctypes.c_size_t),
+                        ("PeakProcessMemoryLimit", ctypes.c_size_t),
+                        ("PeakJobMemoryLimit", ctypes.c_size_t),
+                    ]
+
+                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
+                JobObjectExtendedLimitInformation = 9
+
+                info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+                info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+                kernel32.SetInformationJobObject(
+                    self._job_handle,
+                    JobObjectExtendedLimitInformation,
+                    ctypes.byref(info),
+                    ctypes.sizeof(info),
+                )
+
+            PROCESS_SET_QUOTA = 0x0100
+            PROCESS_TERMINATE = 0x0001
+            h_proc = kernel32.OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, False, self._process.pid)
+            if h_proc:
+                try:
+                    kernel32.AssignProcessToJobObject(self._job_handle, h_proc)
+                finally:
+                    kernel32.CloseHandle(h_proc)
+        except Exception:
+            pass
 
     def _start_process(self) -> bool:
         """Spawn the headless mpv process."""
@@ -65,6 +141,7 @@ class AudioPlayer:
                 stderr=subprocess.DEVNULL,
                 creationflags=creationflags,
             )
+            self._assign_to_job()
             return True
         except Exception:
             self._process = None
@@ -240,6 +317,8 @@ class AudioPlayer:
                 try:
                     quit_msg = json.dumps({"command": ["quit"]}) + "\n"
                     self._ipc_conn.write(quit_msg.encode("utf-8"))
+                    if hasattr(self._ipc_conn, "flush"):
+                        self._ipc_conn.flush()
                 except Exception:
                     pass
                 try:
@@ -258,13 +337,34 @@ class AudioPlayer:
             if self._process and self._process.poll() is None:
                 try:
                     self._process.terminate()
-                    self._process.wait(timeout=1.5)
+                    self._process.wait(timeout=1.0)
                 except Exception:
+                    pass
+
+                if self._process and self._process.poll() is None:
+                    if self.is_win:
+                        try:
+                            subprocess.run(
+                                ["taskkill", "/F", "/T", "/PID", str(self._process.pid)],
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL,
+                                timeout=1.5,
+                            )
+                        except Exception:
+                            pass
                     try:
                         self._process.kill()
                     except Exception:
                         pass
             self._process = None
+
+            if getattr(self, "_job_handle", None):
+                try:
+                    import ctypes
+                    ctypes.WinDLL("kernel32").CloseHandle(self._job_handle)
+                except Exception:
+                    pass
+                self._job_handle = None
 
             if not self.is_win and self.ipc_path:
                 try:

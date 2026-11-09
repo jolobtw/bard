@@ -179,7 +179,7 @@ def test_action_volume_up_and_down(tmp_path):
     mock_player.set_volume.assert_called_with(60)
 
 
-def test_action_quit_pauses_playback(tmp_path):
+def test_action_quit_pauses_and_closes_player(tmp_path):
     cfg = BardConfig(config_path=tmp_path / "config.json")
     mock_client = MagicMock()
     mock_player = MagicMock()
@@ -187,6 +187,17 @@ def test_action_quit_pauses_playback(tmp_path):
     app = BardApp(cfg, mock_client, player=mock_player)
     app.action_quit()
     mock_player.pause.assert_called_once()
+    mock_player.close.assert_called_once()
+
+
+def test_on_unmount_closes_player(tmp_path):
+    cfg = BardConfig(config_path=tmp_path / "config.json")
+    mock_client = MagicMock()
+    mock_player = MagicMock()
+
+    app = BardApp(cfg, mock_client, player=mock_player)
+    app.on_unmount()
+    mock_player.close.assert_called_once()
 
 
 def test_on_progress_tick_syncs_with_player(tmp_path):

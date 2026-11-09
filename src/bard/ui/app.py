@@ -390,13 +390,25 @@ class BardApp(App):
             self.stage_widget.focus()
 
     def action_quit(self) -> None:
-        """Pause playback and exit."""
+        """Pause playback, terminate audio player cleanly, and exit."""
         if self.player:
             try:
                 self.player.pause()
             except Exception:
                 pass
+            try:
+                self.player.close()
+            except Exception:
+                pass
         self.exit()
+
+    def on_unmount(self) -> None:
+        """Ensure audio engine is stopped when application unmounts."""
+        if self.player:
+            try:
+                self.player.close()
+            except Exception:
+                pass
 
     def _safe_call(self, callback: Any, *args: Any, **kwargs: Any) -> Any:
         """Execute callback on main Textual thread if running in background thread, else directly."""

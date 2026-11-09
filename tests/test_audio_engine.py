@@ -143,5 +143,17 @@ def test_audio_engine_find_mpv_local_priority_across_candidates(tmp_path: Path):
         assert found == str(local_target)
 
 
+def test_audio_engine_prefers_mpv_exe_over_com(tmp_path: Path):
+    """Verify mpv.exe is preferred over mpv.com on Windows."""
+    if platform.system() != "Windows":
+        return
+    (tmp_path / "mpv.com").touch()
+    (tmp_path / "mpv.exe").touch()
+
+    engine = AudioEngine(bin_dir=tmp_path)
+    assert engine.binary_name == "mpv.exe"
+    assert AudioEngine.find_mpv(bin_dir=tmp_path) == str(tmp_path / "mpv.exe")
+
+
 
 

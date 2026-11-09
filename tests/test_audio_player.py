@@ -3,6 +3,7 @@
 import io
 import json
 import platform
+import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -240,5 +241,41 @@ def test_player_restart_process_disconnects_stale_ipc():
         stale_conn2.close.assert_called_once()
         assert player._ipc_conn is None
         assert player._process == mock_proc2
+
+
+def test_player_close_taskkill_fallback_on_windows():
+    with patch("bard.audio_player.subprocess.Popen") as mock_popen, \
+         patch("bard.audio_player.subprocess.run") as mock_run:
+        mock_proc = MagicMock()
+        mock_proc.pid = 9999
+        # poll always returns None to simulate stubborn process
+        mock_proc.poll.return_value = None
+        mock_popen.return_value = mock_proc
+
+        player = AudioPlayer(binary_path="dummy_mpv")
+        player.is_win = True
+        player.close()
+
+        mock_proc.terminate.assert_called_once()
+        mock_run.assert_called_once_with(
+            ["taskkill", "/F", "/T", "/PID", "9999"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=1.5,
+        )
+        mock_proc.kill.assert_called_once()
+        assert player._process is None
+
+
+def test_player_assign_to_job_safe_on_mock_or_invalid_pid():
+    with patch("bard.audio_player.subprocess.Popen") as mock_popen:
+        mock_proc = MagicMock()
+        mock_proc.pid = "not-an-int"
+        mock_popen.return_value = mock_proc
+
+        player = AudioPlayer(binary_path="dummy_mpv")
+        # Should return without exception
+        player._assign_to_job()
+
 
 
