@@ -218,6 +218,34 @@ def test_get_stream_url_failure_returns_none():
         assert url is None
 
 
+def test_get_stream_url_sets_last_stream_error_on_failure():
+    with patch("bard.ytmusic_client.yt_dlp.YoutubeDL") as MockYDL:
+        mock_ydl_instance = MagicMock()
+        mock_ydl_instance.extract_info.side_effect = Exception(
+            "ERROR: [youtube] 12345: Join this channel to get access to members-only content. See https://github.com/yt-dlp"
+        )
+        MockYDL.return_value.__enter__.return_value = mock_ydl_instance
+
+        client = YTMusicClient()
+        url = client.get_stream_url("12345")
+        assert url is None
+        assert client.last_stream_error == "Join this channel to get access to members-only content."
+
+
+def test_get_stream_url_fallback_succeeds_when_first_fails():
+    with patch("bard.ytmusic_client.yt_dlp.YoutubeDL") as MockYDL:
+        instance1 = MagicMock()
+        instance1.extract_info.side_effect = Exception("ERROR: [youtube] 12345: Sign in to confirm you’re not a bot")
+        instance2 = MagicMock()
+        instance2.extract_info.return_value = {"url": "https://googlevideo.com/stream_from_android"}
+        MockYDL.return_value.__enter__.side_effect = [instance1, instance2]
+
+        client = YTMusicClient()
+        url = client.get_stream_url("12345")
+        assert url == "https://googlevideo.com/stream_from_android"
+        assert client.last_stream_error is None
+
+
 def test_get_stream_url_empty_id():
     client = YTMusicClient()
     assert client.get_stream_url("") is None

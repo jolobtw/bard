@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+import re
+import shutil
 from typing import Any, Dict, List, Optional, Union
 
 import requests
@@ -173,6 +175,7 @@ class YTMusicClient:
         self._oauth = oauth
         self._authenticated = False
         self._anon_instance: Optional[YTMusic] = None
+        self.last_stream_error: Optional[str] = None
 
         if auth_header:
             try:
@@ -509,36 +512,78 @@ class YTMusicClient:
 
     def get_stream_url(self, video_id: str) -> Optional[str]:
         """Resolve a direct audio stream URL for a YouTube video using yt-dlp."""
+        self.last_stream_error = None
         if not video_id or not isinstance(video_id, str):
             return None
 
         url = video_id if video_id.startswith("http") else f"https://www.youtube.com/watch?v={video_id}"
-        ydl_opts = {
-            "format": "bestaudio/best",
-            "quiet": True,
-            "no_warnings": True,
-            "noplaylist": True,
-        }
 
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                if not info or not isinstance(info, dict):
-                    return None
+        # Detect available JavaScript runtimes (node, deno, bun) so yt-dlp can decrypt challenges
+        js_runtimes = {}
+        for rt in ("deno", "node", "bun"):
+            if shutil.which(rt):
+                js_runtimes[rt] = {}
+                break
 
-                if "url" in info and info["url"]:
-                    return str(info["url"])
+        # Extraction strategies: try default clients first; fallback to android/ios/tv if challenged
+        strategies: List[Optional[List[str]]] = [
+            None,
+            ["android"],
+            ["ios"],
+            ["tv"],
+        ]
 
-                formats = info.get("formats")
-                if isinstance(formats, list):
-                    for fmt in reversed(formats):
-                        if isinstance(fmt, dict) and fmt.get("url"):
-                            return str(fmt["url"])
+        last_error_msg: Optional[str] = None
 
-                return None
-        except Exception as exc:
-            logger.error("Failed to extract stream URL for %s: %s", video_id, exc)
-            return None
+        for client in strategies:
+            ydl_opts: Dict[str, Any] = {
+                "format": "bestaudio/best",
+                "quiet": True,
+                "no_warnings": True,
+                "noplaylist": True,
+            }
+            if js_runtimes:
+                ydl_opts["js_runtimes"] = js_runtimes
+            if client:
+                ydl_opts["extractor_args"] = {"youtube": {"player_client": client}}
+
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    if not info or not isinstance(info, dict):
+                        continue
+
+                    if "url" in info and info["url"]:
+                        self.last_stream_error = None
+                        return str(info["url"])
+
+                    formats = info.get("formats")
+                    if isinstance(formats, list):
+                        for fmt in reversed(formats):
+                            if isinstance(fmt, dict) and fmt.get("url"):
+                                self.last_stream_error = None
+                                return str(fmt["url"])
+
+            except Exception as exc:
+                raw = str(exc).strip()
+                cleaned = re.sub(r"^(ERROR:\s*)?(\[[^\]]+\]\s*)?([a-zA-Z0-9_-]+:\s*)?", "", raw).strip()
+                cleaned = cleaned.split("Use --cookies-from-browser")[0].strip()
+                cleaned = re.split(r"See\s+https?://", cleaned)[0].strip()
+                if cleaned:
+                    last_error_msg = cleaned
+                else:
+                    last_error_msg = raw
+
+                # If the video is members-only, private, geo-blocked, or removed, further clients won't help
+                lower_msg = raw.lower()
+                if any(k in lower_msg for k in ["members-only", "join this channel", "private", "not available in your country", "removed by the uploader"]):
+                    break
+
+        if last_error_msg:
+            logger.error("Failed to extract stream URL for %s: %s", video_id, last_error_msg)
+            self.last_stream_error = last_error_msg
+
+        return None
 
     def get_liked_songs(self, limit: int = 50) -> List[Track]:
         """Retrieve user's liked songs from YouTube Music."""

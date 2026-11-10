@@ -213,13 +213,19 @@ class BardApp(App):
                 return
 
         if not stream_url:
+            error_reason = getattr(self.client, "last_stream_error", None)
+            if isinstance(error_reason, str) and error_reason.strip():
+                msg = f"Could not play '{track.title}': {error_reason.strip()}"
+            else:
+                msg = f"Could not resolve audio stream for '{track.title}'."
+
             if self.is_mounted:
                 self.call_from_thread(
                     self.notify,
-                    f"Could not resolve audio stream for '{track.title}'.",
+                    msg,
                     title="Playback Error",
                     severity="error",
-                    timeout=5,
+                    timeout=6,
                 )
             return
 

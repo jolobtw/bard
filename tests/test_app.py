@@ -420,3 +420,34 @@ def test_bard_app_handle_disconnect_account(tmp_path):
         mock_refresh.assert_called_once()
         mock_notify.assert_called_once_with("Disconnected from YouTube Music.", title="Account")
 
+
+def test_play_track_worker_notifies_descriptive_stream_error(tmp_path):
+    async def _run():
+        cfg = BardConfig(config_path=tmp_path / "config.json")
+        mock_client = MagicMock()
+        mock_client.get_stream_url.return_value = None
+        mock_client.last_stream_error = "Join this channel to get access to members-only content."
+        mock_player = MagicMock()
+
+        app = BardApp(cfg, mock_client, player=mock_player)
+        track = Track(
+            id="vid_members_only",
+            title="Members Only Track",
+            artist="Imagine Dragons",
+            album="Arcane",
+            duration_seconds=180,
+            thumbnail_url="http://art.jpg",
+        )
+
+        notifications = []
+
+        async with app.run_test():
+            app.notify = lambda msg, **kwargs: notifications.append((msg, kwargs))
+            app._play_track_worker(track)
+            await asyncio.sleep(0.1)
+
+            assert any("Members Only Track" in n[0] and "Join this channel" in n[0] for n in notifications)
+
+    asyncio.run(_run())
+
+
