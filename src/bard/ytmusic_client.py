@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+import random
 import re
 import shutil
 from typing import Any, Dict, List, Optional, Union
@@ -486,7 +487,6 @@ class YTMusicClient:
             else:
                 fallback = self.get_playlist_tracks(pid)
             if fallback:
-                import random
                 shuffled = list(fallback)
                 random.shuffle(shuffled)
                 return shuffled[:limit] if limit else shuffled

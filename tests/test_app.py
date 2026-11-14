@@ -502,4 +502,31 @@ def test_app_shuffle_play_worker_empty_tracks(tmp_path):
     asyncio.run(_run())
 
 
+def test_app_shuffle_play_worker_curated_fallback(tmp_path):
+    """Verify _shuffle_play_worker falls back to drawer tracks when get_shuffled_playlist_tracks yields empty."""
+    async def _run():
+        cfg = BardConfig(config_path=tmp_path / "config.json")
+        client = MagicMock()
+        client.get_shuffled_playlist_tracks.return_value = []
+        drawer_track = Track(id="t_lofi", title="Lo-Fi Chill", artist="Chill Artist", album="Chill", duration_seconds=150, thumbnail_url="")
+
+        app = BardApp(cfg, client)
+        app.drawer_widget.tracks = [drawer_track]
+        app.play_track = MagicMock()
+
+        notifications = []
+        async with app.run_test():
+            app.notify = lambda msg, **kwargs: notifications.append((msg, kwargs))
+            app._shuffle_play_worker("lofi", "☕ Lo-Fi Beats")
+            await asyncio.sleep(0.1)
+
+            assert len(app.queue) == 1
+            assert app.queue[0].id == "t_lofi"
+            app.play_track.assert_called_once_with(drawer_track)
+            assert any("Playing" in n[0] and "shuffle" in n[0] for n in notifications)
+
+    asyncio.run(_run())
+
+
+
 

@@ -692,5 +692,52 @@ def test_drawer_shuffle_shortcut_ignored_in_search():
     asyncio.run(_test())
 
 
+def test_drawer_shuffle_shortcut_in_drilled_down_playlist():
+    """Verify pressing 's' while viewing tracks of a drilled-down playlist shuffles that playlist."""
+    from textual import events
+
+    mock_client = MagicMock()
+    mock_client.is_authenticated.return_value = True
+    mock_client.get_library_playlists.return_value = [
+        {"id": "PL_fav", "title": "My Favorite Tracks", "count": "50", "thumbnail_url": ""}
+    ]
+    mock_client.get_playlist_tracks.return_value = [
+        Track(id="t1", title="Track 1", artist="Artist", album="Album", duration_seconds=180, thumbnail_url="")
+    ]
+    drawer = CurtainDrawer(client=mock_client)
+
+    shuffled_payloads = []
+    drawer.on_shuffle_play = lambda payload: shuffled_payloads.append(payload)
+
+    class TestApp(App):
+        def compose(self) -> ComposeResult:
+            yield drawer
+
+    async def _test():
+        app = TestApp()
+        async with app.run_test():
+            playlists_idx = next(i for i, c in enumerate(drawer.categories) if c["id"] == "library_playlists")
+            drawer.select_category(playlists_idx)
+            await asyncio.sleep(0.1)
+
+            tlist = drawer.query_one("#track-list", OptionList)
+            # Drill down into playlist at index 0
+            drawer.on_option_list_option_selected(OptionList.OptionSelected(tlist, tlist.get_option_at_index(0), 0))
+            await asyncio.sleep(0.1)
+
+            assert len(drawer._nav_stack) == 1
+            tlist.focus()
+            tlist.highlighted = 1  # Highlight the track inside the playlist
+
+            drawer.on_key(events.Key("s", "s"))
+            assert len(shuffled_payloads) == 1
+            assert shuffled_payloads[0]["id"] == "PL_fav"
+            assert shuffled_payloads[0]["title"] == "My Favorite Tracks"
+            assert shuffled_payloads[0]["type"] == "playlist"
+
+    asyncio.run(_test())
+
+
+
 
 

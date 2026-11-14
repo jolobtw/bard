@@ -160,6 +160,7 @@ class CurtainDrawer(Widget):
         self.on_disconnect_account: Optional[Callable[[], None]] = on_disconnect_account
 
         self._nav_stack: List[Dict[str, Any]] = []
+        self._current_container: Optional[Dict[str, Any]] = None
         self._cache: Dict[str, Any] = {}
         self._current_cat_idx: int = 0
         self._active_query: Optional[str] = None
@@ -217,6 +218,7 @@ class CurtainDrawer(Widget):
         self.categories = self._build_categories(is_auth)
         self._cache.clear()
         self._nav_stack.clear()
+        self._current_container = None
         self._current_cat_idx = 0
 
         try:
@@ -374,13 +376,8 @@ class CurtainDrawer(Widget):
                 tlist = self.query_one("#track-list", OptionList)
                 clist = self.query_one("#category-list", OptionList)
                 if tlist.has_focus or (not clist.has_focus and tlist.highlighted is not None):
-                    if self._nav_stack:
-                        last_nav = self._nav_stack[-1]
-                        target = {
-                            "id": last_nav.get("id"),
-                            "title": last_nav.get("title", "Playlist"),
-                            "type": last_nav.get("type", "playlist"),
-                        }
+                    if self._nav_stack and self._current_container:
+                        target = dict(self._current_container)
                     elif self._current_items and tlist.highlighted is not None and 0 <= tlist.highlighted < len(self._current_items):
                         item = self._current_items[tlist.highlighted]
                         if isinstance(item, dict) and ("id" in item or "playlistId" in item):
@@ -475,6 +472,7 @@ class CurtainDrawer(Widget):
             return
 
         self._nav_stack.clear()
+        self._current_container = None
         self._current_cat_idx = index
         cat = self.categories[index]
         cat_id = cat["id"]
@@ -724,6 +722,7 @@ class CurtainDrawer(Widget):
         playlist_id = playlist.get("id") or ""
         title = playlist.get("title") or "Playlist"
         self._push_nav_state("Playlists")
+        self._current_container = {"id": playlist_id, "title": title, "type": "playlist"}
         self.close_search()
 
         try:
@@ -749,6 +748,7 @@ class CurtainDrawer(Widget):
         browse_id = album.get("browse_id") or album.get("browseId") or album.get("id") or ""
         title = album.get("title") or "Album"
         self._push_nav_state("Results")
+        self._current_container = {"id": browse_id, "title": title, "type": "album"}
         self.close_search()
 
         try:
@@ -784,17 +784,20 @@ class CurtainDrawer(Widget):
             "parent_name": parent_name,
             "active_query": self._active_query,
             "cat_idx": self._current_cat_idx,
+            "container": dict(self._current_container) if self._current_container else None,
         })
 
     def _navigate_back(self) -> None:
         """Return to parent view from drilled-down state."""
         if not self._nav_stack:
+            self._current_container = None
             return
 
         prev_state = self._nav_stack.pop()
         self._active_query = prev_state.get("active_query")
         self._current_items = prev_state.get("items", [])
         self.tracks = prev_state.get("tracks", [])
+        self._current_container = prev_state.get("container")
 
         try:
             tlist = self.query_one("#track-list", OptionList)

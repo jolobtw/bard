@@ -203,6 +203,11 @@ class BardApp(App):
             except Exception as exc:
                 logger.error("Failed to fetch shuffled tracks for %s: %s", playlist_id, exc)
 
+        if not tracks and hasattr(self.drawer_widget, "tracks") and self.drawer_widget.tracks:
+            import random
+            tracks = list(self.drawer_widget.tracks)
+            random.shuffle(tracks)
+
         if not tracks:
             if self.is_mounted and hasattr(self, "call_from_thread"):
                 self.call_from_thread(
