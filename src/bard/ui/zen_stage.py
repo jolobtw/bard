@@ -93,13 +93,14 @@ class TransportBar(Widget):
     DEFAULT_CSS = """
     TransportBar {
         width: 17;
-        height: 3;
+        height: 4;
         background: #181A24;
     }
     """
 
-    # Row 0-1 (top): [0..3] Prev, [5..11] Play Pill, [13..16] Next
-    # Row 2 (bottom): [5..7] Shuffle, [9..11] Repeat
+    # Row 1 (top): [0..3] Prev, [5..11] Play Pill, [13..16] Next
+    # Row 2: blank spacer
+    # Row 3 (bottom): [5..7] Shuffle, [9..11] Repeat
     TOP_ZONES = (
         ("prev", 0, 4),
         ("play", 5, 12),
@@ -152,7 +153,12 @@ class TransportBar(Widget):
         self.refresh()
 
     def _zone_at(self, x: int, y: int) -> Optional[str]:
-        zones = self.BOTTOM_ZONES if y >= 2 else self.TOP_ZONES
+        if y == 1:
+            zones = self.TOP_ZONES
+        elif y == 3:
+            zones = self.BOTTOM_ZONES
+        else:
+            return None
         for name, start, end in zones:
             if start <= x < end:
                 return name
@@ -218,20 +224,20 @@ class TransportBar(Widget):
         rst = "\x1b[0m"
         gap = f"{_DOCK_BG_ANSI} {rst}"
 
-        line0 = f"{_DOCK_BG_ANSI}{' ' * 17}{rst}"
+        blank = f"{_DOCK_BG_ANSI}{' ' * 17}{rst}"
         line1 = (
             f"{_fg(prev_rgb)} 󰒮  {rst}"
             f"{gap}{pill}{gap}"
             f"{_fg(next_rgb)}  󰒭 {rst}"
         )
-        line2 = (
+        line3 = (
             f"{_DOCK_BG_ANSI}     {rst}"
             f"{_fg(shuf_rgb)} 󰒟 {rst}"
             f"{gap}"
             f"{_fg(rep_rgb)} {rep_glyph} {rst}"
             f"{_DOCK_BG_ANSI}     {rst}"
         )
-        return Text.from_ansi(f"{line0}\n{line1}\n{line2}")
+        return Text.from_ansi(f"{blank}\n{line1}\n{blank}\n{line3}")
 
 
 class VolumeBar(Widget):
@@ -388,7 +394,7 @@ class ZenStage(Widget):
 
     #player-dock {
         width: 100%;
-        height: 7;
+        height: 8;
         background: #181A24;
         border: round #2E3244;
         padding: 0 2;
@@ -396,7 +402,7 @@ class ZenStage(Widget):
 
     #dock-top-row {
         width: 100%;
-        height: 3;
+        height: 4;
         align: center middle;
     }
 

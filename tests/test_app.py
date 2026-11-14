@@ -531,11 +531,11 @@ def test_app_transport_buttons_clickable_in_app(tmp_path):
         app.current_track = t1
 
         async with app.run_test(size=(100, 40)) as pilot:
-            await pilot.click("#transport-controls", offset=(6, 2))   # Shuffle (row 2)
+            await pilot.click("#transport-controls", offset=(6, 3))   # Shuffle (row 3)
             await pilot.pause()
             assert app.shuffle_enabled is True
 
-            await pilot.click("#transport-controls", offset=(10, 2))  # Repeat (row 2)
+            await pilot.click("#transport-controls", offset=(10, 3))  # Repeat (row 3)
             await pilot.pause()
             assert app.repeat_mode == "all"
 
@@ -702,11 +702,11 @@ def test_app_transport_buttons_clickable_in_app(tmp_path):
         app.current_track = t1
 
         async with app.run_test(size=(100, 40)) as pilot:
-            await pilot.click("#transport-controls", offset=(6, 2))   # Shuffle (row 2)
+            await pilot.click("#transport-controls", offset=(6, 3))   # Shuffle (row 3)
             await pilot.pause()
             assert app.shuffle_enabled is True
 
-            await pilot.click("#transport-controls", offset=(10, 2))  # Repeat (row 2)
+            await pilot.click("#transport-controls", offset=(10, 3))  # Repeat (row 3)
             await pilot.pause()
             assert app.repeat_mode == "all"
 

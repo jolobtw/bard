@@ -196,8 +196,8 @@ def test_zen_stage_clickable_transport_buttons_and_shuffle():
             await pilot.click("#transport-controls", offset=(1, 1))   # Prev
             await pilot.click("#transport-controls", offset=(8, 1))   # Play pill
             await pilot.click("#transport-controls", offset=(14, 1))  # Next
-            await pilot.click("#transport-controls", offset=(6, 2))   # Shuffle (row 2)
-            await pilot.click("#transport-controls", offset=(10, 2))  # Repeat (row 2)
+            await pilot.click("#transport-controls", offset=(6, 3))   # Shuffle (row 3)
+            await pilot.click("#transport-controls", offset=(10, 3))  # Repeat (row 3)
             assert calls[:5] == ["prev", "play_pause", "next", "shuffle", "repeat"]
 
             stage.set_shuffle(True)
