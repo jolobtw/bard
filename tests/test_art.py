@@ -114,4 +114,18 @@ def test_render_album_art_default_hero_dimensions():
     assert len(lines) == 20
 
 
+def test_image_to_ansi_uses_quadrant_blocks_for_higher_resolution():
+    # High-res image with horizontal split (left red, right blue) should use left-half block ▌
+    img = Image.new("RGB", (16, 16))
+    for y in range(16):
+        for x in range(16):
+            img.putpixel((x, y), (255, 0, 0) if x < 8 else (0, 0, 255))
+
+    ansi_output = image_to_ansi(img, width=4, height=4)
+    lines = ansi_output.split("\n")
+    assert len(lines) == 4
+    # Quadrant renderer can represent vertical splits using ▌ (\u258c) or other quadrants
+    assert any(ch in ansi_output for ch in ("\u258c", "\u2598", "\u259d", "\u2596", "\u2597", "\u259a", "\u259e"))
+
+
 

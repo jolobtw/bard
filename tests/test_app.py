@@ -480,6 +480,80 @@ def test_app_handle_shuffle_play(tmp_path):
     asyncio.run(_run())
 
 
+def test_action_toggle_shuffle_and_restore_order(tmp_path):
+    cfg = BardConfig(config_path=tmp_path / "config.json")
+    client = MagicMock()
+    app = BardApp(cfg, client)
+
+    keys = [b.key for b in app.BINDINGS]
+    assert "s" in keys
+
+    tracks = [
+        Track(id=f"t{i}", title=f"Song {i}", artist="Artist", album="Album", duration_seconds=120, thumbnail_url="")
+        for i in range(6)
+    ]
+    app.queue = list(tracks)
+    app.current_index = 2
+    app.current_track = tracks[2]
+
+    app.action_toggle_shuffle()
+    assert app.shuffle_enabled is True
+    assert app.stage_widget.shuffle_enabled is True
+    assert app.current_index == 0
+    assert app.queue[0] == tracks[2]
+    assert set(t.id for t in app.queue) == set(t.id for t in tracks)
+
+    # Toggling off restores original order and current_index
+    app.action_toggle_shuffle()
+    assert app.shuffle_enabled is False
+    assert app.stage_widget.shuffle_enabled is False
+    assert [t.id for t in app.queue] == [t.id for t in tracks]
+    assert app.current_index == 2
+
+
+def test_app_transport_buttons_clickable_in_app(tmp_path):
+    async def _run():
+        cfg = BardConfig(config_path=tmp_path / "config.json")
+        client = MagicMock()
+        client.get_stream_url.side_effect = lambda tid: f"https://audio/{tid}"
+        player = MagicMock()
+        player.play.return_value = True
+        player.is_playing.return_value = True
+        player.get_position.return_value = 1.0
+        player.get_duration.return_value = 120.0
+        player.get_volume.return_value = 70
+
+        app = BardApp(cfg, client, player=player)
+        t1 = Track("1", "Track 1", "Artist 1", "Album", 120, "")
+        t2 = Track("2", "Track 2", "Artist 2", "Album", 150, "")
+        app.queue = [t1, t2]
+        app.current_index = 0
+        app.current_track = t1
+
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.click("#btn-shuffle")
+            await pilot.pause()
+            assert app.shuffle_enabled is True
+
+            await pilot.click("#btn-play")
+            await pilot.pause()
+            player.pause.assert_called_once()
+
+            await pilot.click("#btn-next")
+            await pilot.pause()
+            await asyncio.sleep(0.1)
+            assert app.current_index == 1
+            assert app.current_track == t2
+
+            await pilot.click("#btn-prev")
+            await pilot.pause()
+            await asyncio.sleep(0.1)
+            assert app.current_index == 0
+            assert app.current_track == t1
+
+    asyncio.run(_run())
+
+
 def test_app_shuffle_play_worker_empty_tracks(tmp_path):
     """Verify _shuffle_play_worker gracefully warns when no tracks returned."""
     async def _run():
@@ -524,6 +598,80 @@ def test_app_shuffle_play_worker_curated_fallback(tmp_path):
             assert app.queue[0].id == "t_lofi"
             app.play_track.assert_called_once_with(drawer_track)
             assert any("Playing" in n[0] and "shuffle" in n[0] for n in notifications)
+
+    asyncio.run(_run())
+
+
+def test_action_toggle_shuffle_and_restore_order(tmp_path):
+    cfg = BardConfig(config_path=tmp_path / "config.json")
+    client = MagicMock()
+    app = BardApp(cfg, client)
+
+    keys = [b.key for b in app.BINDINGS]
+    assert "s" in keys
+
+    tracks = [
+        Track(id=f"t{i}", title=f"Song {i}", artist="Artist", album="Album", duration_seconds=120, thumbnail_url="")
+        for i in range(6)
+    ]
+    app.queue = list(tracks)
+    app.current_index = 2
+    app.current_track = tracks[2]
+
+    app.action_toggle_shuffle()
+    assert app.shuffle_enabled is True
+    assert app.stage_widget.shuffle_enabled is True
+    assert app.current_index == 0
+    assert app.queue[0] == tracks[2]
+    assert set(t.id for t in app.queue) == set(t.id for t in tracks)
+
+    # Toggling off restores original order and current_index
+    app.action_toggle_shuffle()
+    assert app.shuffle_enabled is False
+    assert app.stage_widget.shuffle_enabled is False
+    assert [t.id for t in app.queue] == [t.id for t in tracks]
+    assert app.current_index == 2
+
+
+def test_app_transport_buttons_clickable_in_app(tmp_path):
+    async def _run():
+        cfg = BardConfig(config_path=tmp_path / "config.json")
+        client = MagicMock()
+        client.get_stream_url.side_effect = lambda tid: f"https://audio/{tid}"
+        player = MagicMock()
+        player.play.return_value = True
+        player.is_playing.return_value = True
+        player.get_position.return_value = 1.0
+        player.get_duration.return_value = 120.0
+        player.get_volume.return_value = 70
+
+        app = BardApp(cfg, client, player=player)
+        t1 = Track("1", "Track 1", "Artist 1", "Album", 120, "")
+        t2 = Track("2", "Track 2", "Artist 2", "Album", 150, "")
+        app.queue = [t1, t2]
+        app.current_index = 0
+        app.current_track = t1
+
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.click("#btn-shuffle")
+            await pilot.pause()
+            assert app.shuffle_enabled is True
+
+            await pilot.click("#btn-play")
+            await pilot.pause()
+            player.pause.assert_called_once()
+
+            await pilot.click("#btn-next")
+            await pilot.pause()
+            await asyncio.sleep(0.1)
+            assert app.current_index == 1
+            assert app.current_track == t2
+
+            await pilot.click("#btn-prev")
+            await pilot.pause()
+            await asyncio.sleep(0.1)
+            assert app.current_index == 0
+            assert app.current_track == t1
 
     asyncio.run(_run())
 

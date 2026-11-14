@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 from rich.text import Text
 from textual.app import ComposeResult
-from textual.containers import Center, Vertical
+from textual.containers import Center, Horizontal, Vertical
 from textual.widget import Widget
-from textual.widgets import Static
+from textual.widgets import Button, Static
 
 from bard.arcane_theme import load_theme, render_rich_gradient
 from bard.art import render_album_art
@@ -57,7 +57,7 @@ class ZenStage(Widget):
 
     #stage-container {
         width: 86;
-        max-width: 92;
+        max-width: 96%;
         height: auto;
         border: round #FF7A00;
         background: #181A24;
@@ -96,8 +96,54 @@ class ZenStage(Widget):
     }
 
     #transport-controls {
-        text-align: center;
+        width: 100%;
+        height: auto;
+        align: center middle;
         margin-bottom: 1;
+    }
+
+    .transport-btn {
+        width: auto;
+        min-width: 10;
+        height: 3;
+        background: #1B1E2B;
+        color: #CDD6F4;
+        border: round #363B54;
+        padding: 0 2;
+        margin: 0 1;
+        text-style: none;
+        content-align: center middle;
+    }
+
+    .transport-btn:hover {
+        background: #25293A;
+        color: #FFFFFF;
+        border: round #FFD166;
+    }
+
+    .transport-btn:focus {
+        border: round #FF7A00;
+        text-style: bold;
+    }
+
+    #btn-play {
+        min-width: 13;
+        color: #FFD166;
+        border: round #4B5273;
+    }
+
+    #btn-play.-playing {
+        background: #2A1D16;
+        color: #FFD166;
+        border: round #FF7A00;
+        text-style: bold;
+    }
+
+    #btn-shuffle.-active {
+        background: #2A1D16;
+        color: #FFD166;
+        border: round #FF7A00;
+        text-style: bold;
     }
 
     #status-bar {
@@ -112,14 +158,30 @@ class ZenStage(Widget):
     }
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        on_prev: Optional[Callable[[], None]] = None,
+        on_play_pause: Optional[Callable[[], None]] = None,
+        on_next: Optional[Callable[[], None]] = None,
+        on_shuffle: Optional[Callable[[], None]] = None,
+    ):
         super().__init__()
+        self.on_prev = on_prev
+        self.on_play_pause = on_play_pause
+        self.on_next = on_next
+        self.on_shuffle = on_shuffle
+        self.shuffle_enabled: bool = False
         self.playback_data: Optional[Dict[str, Any]] = None
         self._current_progress_ms: int = 0
         self._last_art_url: str = ""
         self._cached_art_ansi: str = ""
         self._last_rendered_dims: Optional[Tuple[int, int]] = None
         self.device_name: Optional[str] = None
+
+    def set_shuffle(self, enabled: bool) -> None:
+        """Update shuffle toggle state and refresh transport button styling."""
+        self.shuffle_enabled = enabled
+        self.refresh_stage()
 
     def get_art_dimensions(self) -> Tuple[int, int]:
         """Compute responsive album art dimensions based on current widget/screen dimensions."""
@@ -131,6 +193,8 @@ class ZenStage(Widget):
                 height = height or self.app.size.height
         if height < 32 or width < 86:
             return (32, 14)
+        if height >= 44 and width >= 110:
+            return (58, 25)
         return (46, 20)
 
     def on_resize(self, event: Any = None) -> None:
@@ -184,9 +248,38 @@ class ZenStage(Widget):
                 yield Static(id="track-title")
                 yield Static(id="track-meta")
                 yield Static(id="progress-bar")
-                yield Static(id="transport-controls")
+                with Horizontal(id="transport-controls"):
+                    yield Button("⇄ Shuffle", id="btn-shuffle", classes="transport-btn")
+                    yield Button("⏮ Prev", id="btn-prev", classes="transport-btn")
+                    yield Button("▶ Resume", id="btn-play", classes="transport-btn")
+                    yield Button("Next ⏭", id="btn-next", classes="transport-btn")
                 yield Static(id="status-bar")
                 yield Static(id="controls-hint")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle clicks on modern transport control buttons."""
+        btn_id = event.button.id
+        event.stop()
+        if btn_id == "btn-shuffle":
+            if self.on_shuffle:
+                self.on_shuffle()
+            elif self.app and hasattr(self.app, "action_toggle_shuffle"):
+                self.app.action_toggle_shuffle()
+        elif btn_id == "btn-prev":
+            if self.on_prev:
+                self.on_prev()
+            elif self.app and hasattr(self.app, "action_prev_track"):
+                self.app.action_prev_track()
+        elif btn_id == "btn-play":
+            if self.on_play_pause:
+                self.on_play_pause()
+            elif self.app and hasattr(self.app, "action_toggle_playback"):
+                self.app.action_toggle_playback()
+        elif btn_id == "btn-next":
+            if self.on_next:
+                self.on_next()
+            elif self.app and hasattr(self.app, "action_next_track"):
+                self.app.action_next_track()
 
     def update_playback(self, data: Optional[Dict[str, Any]]) -> None:
         """Update stage with fresh playback data from YouTube Music or Spotify."""
@@ -226,9 +319,31 @@ class ZenStage(Widget):
         title_widget = self.query_one("#track-title", Static)
         meta_widget = self.query_one("#track-meta", Static)
         bar_widget = self.query_one("#progress-bar", Static)
-        transport_widget = self.query_one("#transport-controls", Static)
+        shuffle_btn = self.query_one("#btn-shuffle", Button)
+        play_btn = self.query_one("#btn-play", Button)
         status_widget = self.query_one("#status-bar", Static)
         hint_widget = self.query_one("#controls-hint", Static)
+
+        if self.shuffle_enabled:
+            shuffle_btn.add_class("-active")
+            shuffle_btn.label = "⇄ Shuffle •"
+        else:
+            shuffle_btn.remove_class("-active")
+            shuffle_btn.label = "⇄ Shuffle"
+
+        hint_text = Text.assemble(
+            ("Tab", "bold #FFD166"),
+            (" Explore", "#6C7086"),
+            ("   •   ", "#2E3244"),
+            ("Space", "bold #FFD166"),
+            (" Play/Pause", "#6C7086"),
+            ("   •   ", "#2E3244"),
+            ("S", "bold #FFD166"),
+            (" Shuffle", "#6C7086"),
+            ("   •   ", "#2E3244"),
+            ("Q", "bold #FFD166"),
+            (" Quit", "#6C7086"),
+        )
 
         if not self.playback_data:
             art_center.display = False
@@ -248,20 +363,13 @@ class ZenStage(Widget):
                 )
             )
             bar_widget.update("")
-            transport_widget.update("[on #262938 #6C7086]  ◄ Prev [P]  [/]     [on #262938 bold #FFD166]   ▶ RESUME    [/]     [on #262938 #6C7086]  Next [N] ►  [/]")
+            play_btn.label = "▶ Resume"
+            play_btn.remove_class("-playing")
             if self.device_name:
                 status_widget.update(f"[#6C7086]Ready to stream • {self.device_name}[/]")
             else:
                 status_widget.update("[#6C7086]Ready to stream • YouTube Music / Standalone[/]")
-            hint_widget.update(
-                Text.assemble(
-                    (" [Tab] Explore ", "on #262938 bold #FFD166"),
-                    ("   ", ""),
-                    (" [Space] Play/Pause ", "on #262938 bold #A6ADC8"),
-                    ("   ", ""),
-                    (" [Q] Quit ", "on #262938 bold #6C7086"),
-                )
-            )
+            hint_widget.update(hint_text)
             return
 
         art_center.display = True
@@ -278,18 +386,12 @@ class ZenStage(Widget):
         meta_widget.update(f"[#A6ADC8]{artist}[/] [#6C7086]• {album}[/]")
         bar_widget.update(Text.from_markup(render_flame_progress(self._current_progress_ms, duration, width=52)))
 
-        # Hero transport controls: distinct pills with generous breathing room
         if is_playing:
-            play_btn = "[on #FF7A00 bold #FFFFFF]   ❚❚ PAUSE   [/]"
+            play_btn.label = "⏸ Pause"
+            play_btn.add_class("-playing")
         else:
-            play_btn = "[on #262938 bold #FFD166]   ▶ PLAY    [/]"
-
-        transport_markup = (
-            f"[on #262938 #A6ADC8]  ◄ Prev [P]  [/]     "
-            f"{play_btn}     "
-            f"[on #262938 #A6ADC8]  Next [N] ►  [/]"
-        )
-        transport_widget.update(transport_markup)
+            play_btn.label = "▶ Play"
+            play_btn.remove_class("-playing")
 
         # Dedicated status strip: volume & audio engine
         status_markup = (
@@ -300,16 +402,7 @@ class ZenStage(Widget):
         status_widget.update(status_markup)
 
         # Bottom navigation keycaps
-        hint_widget.update(
-            Text.assemble(
-                (" [Tab] ", "on #262938 bold #FFD166"),
-                (" Explore    ", "#6C7086"),
-                (" [Space] ", "on #262938 bold #FFD166"),
-                (" Play/Pause    ", "#6C7086"),
-                (" [Q] ", "on #262938 bold #FFD166"),
-                (" Quit", "#6C7086"),
-            )
-        )
+        hint_widget.update(hint_text)
 
     def on_mount(self) -> None:
         self.refresh_stage()

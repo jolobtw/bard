@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import random
 import webbrowser
 from typing import Any, Dict, List, Optional
 from textual import work
@@ -37,6 +38,7 @@ class BardApp(App):
         Binding("escape", "close_drawer", "Close", priority=True),
         Binding("n", "next_track", "Next"),
         Binding("p", "prev_track", "Previous"),
+        Binding("s", "toggle_shuffle", "Shuffle"),
         Binding("+", "volume_up", "Vol +"),
         Binding("=", "volume_up", "Vol +", show=False),
         Binding("-", "volume_down", "Vol -"),
@@ -55,7 +57,12 @@ class BardApp(App):
         self.player = player
 
         self.header_widget = ArcaneHeader(is_playing=False, device_name="YouTube Music")
-        self.stage_widget = ZenStage()
+        self.stage_widget = ZenStage(
+            on_prev=self.action_prev_track,
+            on_play_pause=self.action_toggle_playback,
+            on_next=self.action_next_track,
+            on_shuffle=self.action_toggle_shuffle,
+        )
         self.drawer_widget = CurtainDrawer(
             self.client,
             on_play=self.handle_drawer_play,
@@ -65,6 +72,8 @@ class BardApp(App):
         )
 
         self.queue: List[Track] = []
+        self._original_queue: List[Track] = []
+        self.shuffle_enabled: bool = False
         self.current_index: int = -1
         self.current_track: Optional[Track] = None
 
@@ -171,13 +180,21 @@ class BardApp(App):
 
         if hasattr(self.drawer_widget, "tracks") and self.drawer_widget.tracks:
             self.queue = list(self.drawer_widget.tracks)
+            self._original_queue = list(self.queue)
             try:
                 self.current_index = self.queue.index(track_obj)
             except ValueError:
                 matching = [i for i, t in enumerate(self.queue) if t.id == track_obj.id]
                 self.current_index = matching[0] if matching else 0
+            if self.shuffle_enabled and len(self.queue) > 1:
+                current = self.queue[self.current_index]
+                remaining = [t for i, t in enumerate(self.queue) if i != self.current_index]
+                random.shuffle(remaining)
+                self.queue = [current] + remaining
+                self.current_index = 0
         else:
             self.queue = [track_obj]
+            self._original_queue = [track_obj]
             self.current_index = 0
 
         self.play_track(track_obj)
@@ -234,6 +251,9 @@ class BardApp(App):
     def _start_shuffled_queue(self, tracks: List[Track], title: str) -> None:
         """Initialize active queue with shuffled tracks and start playback on track 0."""
         self.queue = list(tracks)
+        self._original_queue = list(tracks)
+        self.shuffle_enabled = True
+        self.stage_widget.set_shuffle(True)
         self.current_index = 0
         if hasattr(self.drawer_widget, "tracks"):
             self.drawer_widget.tracks = list(tracks)
@@ -422,6 +442,32 @@ class BardApp(App):
                     self.stage_widget.refresh_stage()
             except Exception:
                 pass
+
+    def action_toggle_shuffle(self) -> None:
+        """Toggle shuffle mode on or off for the active queue."""
+        self.shuffle_enabled = not self.shuffle_enabled
+        if self.shuffle_enabled:
+            if self.queue:
+                if not self._original_queue:
+                    self._original_queue = list(self.queue)
+                if 0 <= self.current_index < len(self.queue):
+                    current = self.queue[self.current_index]
+                    remaining = [t for i, t in enumerate(self.queue) if i != self.current_index]
+                    random.shuffle(remaining)
+                    self.queue = [current] + remaining
+                    self.current_index = 0
+                else:
+                    random.shuffle(self.queue)
+        else:
+            if self._original_queue:
+                self.queue = list(self._original_queue)
+                if self.current_track is not None:
+                    try:
+                        self.current_index = self.queue.index(self.current_track)
+                    except ValueError:
+                        matching = [i for i, t in enumerate(self.queue) if t.id == self.current_track.id]
+                        self.current_index = matching[0] if matching else 0
+        self.stage_widget.set_shuffle(self.shuffle_enabled)
 
     def action_volume_up(self) -> None:
         """Increase volume by 5%."""

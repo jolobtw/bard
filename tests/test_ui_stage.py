@@ -129,4 +129,75 @@ def test_zen_stage_responsive_playback_rendering():
     asyncio.run(_test())
 
 
+def test_zen_stage_large_terminal_art_sizing():
+    from textual.app import App, ComposeResult
+    from bard.ui.zen_stage import ZenStage
+    import asyncio
+
+    class TestApp(App):
+        def compose(self) -> ComposeResult:
+            yield ZenStage()
+
+    async def _test():
+        app_large = TestApp()
+        async with app_large.run_test(size=(120, 48)):
+            stage = app_large.query_one(ZenStage)
+            assert stage.get_art_dimensions() == (58, 25)
+
+    asyncio.run(_test())
+
+
+def test_zen_stage_clickable_transport_buttons_and_shuffle():
+    from textual.app import App, ComposeResult
+    from textual.widgets import Button
+    from bard.ui.zen_stage import ZenStage
+    import asyncio
+
+    calls = []
+
+    class TestApp(App):
+        def compose(self) -> ComposeResult:
+            yield ZenStage(
+                on_prev=lambda: calls.append("prev"),
+                on_play_pause=lambda: calls.append("play_pause"),
+                on_next=lambda: calls.append("next"),
+                on_shuffle=lambda: calls.append("shuffle"),
+            )
+
+    async def _test():
+        app = TestApp()
+        async with app.run_test(size=(100, 40)) as pilot:
+            stage = app.query_one(ZenStage)
+            shuffle_btn = stage.query_one("#btn-shuffle", Button)
+            prev_btn = stage.query_one("#btn-prev", Button)
+            play_btn = stage.query_one("#btn-play", Button)
+            next_btn = stage.query_one("#btn-next", Button)
+
+            assert "Resume" in str(play_btn.label)
+            assert not shuffle_btn.has_class("-active")
+
+            await pilot.click("#btn-shuffle")
+            await pilot.click("#btn-prev")
+            await pilot.click("#btn-play")
+            await pilot.click("#btn-next")
+            assert calls == ["shuffle", "prev", "play_pause", "next"]
+
+            stage.set_shuffle(True)
+            assert shuffle_btn.has_class("-active")
+
+            stage.update_playback({
+                "title": "Test Song",
+                "artist": "Test Artist",
+                "album": "Test Album",
+                "duration_ms": 120000,
+                "progress_ms": 10000,
+                "is_playing": True,
+                "album_art_url": "",
+            })
+            assert "Pause" in str(play_btn.label)
+            assert play_btn.has_class("-playing")
+
+    asyncio.run(_test())
+
+
 
