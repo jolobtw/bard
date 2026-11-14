@@ -22,14 +22,16 @@ _THUMB_GOLD_HEX = _PALETTE.get("accent_gold", "#FFD166")
 
 
 def render_arcane_bar(filled: int, unfilled: int) -> str:
-    """Render a smooth Arcane flame-to-gold gradient bar with a glowing thumb and muted track."""
+    """Render an Arcane flame-to-gold gradient bar anchored to the full bar width."""
+    total = max(1, filled + unfilled)
     parts = []
     if filled > 0:
         for i in range(filled):
-            factor = i / max(1, filled)
+            factor = i / total
             color = interpolate_rgb(_GRAD_START_RGB, _GRAD_END_RGB, factor)
             parts.append(f"[{color}]━[/]")
-    parts.append(f"[bold {_THUMB_GOLD_HEX}]●[/]")
+    thumb_color = interpolate_rgb(_GRAD_START_RGB, _GRAD_END_RGB, filled / total)
+    parts.append(f"[bold {thumb_color}]●[/]")
     if unfilled > 0:
         parts.append(f"[{_TRACK_MUTED_HEX}]{'─' * unfilled}[/]")
     return "".join(parts)

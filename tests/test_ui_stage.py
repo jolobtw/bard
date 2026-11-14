@@ -18,11 +18,15 @@ def test_render_flame_progress():
 
 def test_render_arcane_bar_gradient():
     from bard.ui.zen_stage import render_arcane_bar
-    bar = render_arcane_bar(filled=10, unfilled=5)
-    assert "#FF4500" in bar
-    assert "#FFD166" in bar
-    assert "●" in bar
-    assert "─" * 5 in bar
+    half_bar = render_arcane_bar(filled=5, unfilled=5)
+    assert "#FF4500" in half_bar
+    assert "#FFD166" not in half_bar  # Gradient spans full width, so midpoint hasn't reached gold yet
+    assert "●" in half_bar
+    assert "─" * 5 in half_bar
+
+    full_bar = render_arcane_bar(filled=10, unfilled=0)
+    assert "#FF4500" in full_bar
+    assert "#FFD166" in full_bar
 
 
 def test_zen_stage_empty_state_rendering():
