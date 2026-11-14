@@ -61,6 +61,7 @@ class BardApp(App):
             on_play=self.handle_drawer_play,
             on_connect_account=self.handle_connect_account,
             on_disconnect_account=self.handle_disconnect_account,
+            on_shuffle_play=self.handle_shuffle_play,
         )
 
         self.queue: List[Track] = []
@@ -180,6 +181,64 @@ class BardApp(App):
             self.current_index = 0
 
         self.play_track(track_obj)
+
+    def handle_shuffle_play(self, item: Dict[str, Any]) -> None:
+        """Handle shuffle play request for a playlist or category."""
+        self.drawer_widget.hide()
+        playlist_id = item.get("id") or ""
+        title = item.get("title") or "Playlist"
+        self.notify(f"✦ Shuffling {title}...", title="Bard Shuffle", severity="information", timeout=3)
+        self._shuffle_play_worker(playlist_id, title)
+
+    @work(thread=True, exclusive=True, group="shuffle_fetch")
+    def _shuffle_play_worker(self, playlist_id: str, title: str) -> None:
+        """Background worker to fetch and start playing shuffled playlist."""
+        if not playlist_id:
+            return
+
+        tracks: List[Track] = []
+        if hasattr(self.client, "get_shuffled_playlist_tracks"):
+            try:
+                tracks = self.client.get_shuffled_playlist_tracks(playlist_id)
+            except Exception as exc:
+                logger.error("Failed to fetch shuffled tracks for %s: %s", playlist_id, exc)
+
+        if not tracks:
+            if self.is_mounted and hasattr(self, "call_from_thread"):
+                self.call_from_thread(
+                    self.notify,
+                    f"No tracks found to shuffle in {title}.",
+                    title="Bard Shuffle",
+                    severity="warning",
+                    timeout=4,
+                )
+            else:
+                self.notify(
+                    f"No tracks found to shuffle in {title}.",
+                    title="Bard Shuffle",
+                    severity="warning",
+                    timeout=4,
+                )
+            return
+
+        if self.is_mounted and hasattr(self, "call_from_thread"):
+            self.call_from_thread(self._start_shuffled_queue, tracks, title)
+        else:
+            self._start_shuffled_queue(tracks, title)
+
+    def _start_shuffled_queue(self, tracks: List[Track], title: str) -> None:
+        """Initialize active queue with shuffled tracks and start playback on track 0."""
+        self.queue = list(tracks)
+        self.current_index = 0
+        if hasattr(self.drawer_widget, "tracks"):
+            self.drawer_widget.tracks = list(tracks)
+        self.play_track(self.queue[0])
+        self.notify(
+            f"Playing {title} on shuffle ({len(tracks)} tracks queued)",
+            title="Bard Shuffle",
+            severity="information",
+            timeout=4,
+        )
 
     def play_track(self, track: Track) -> None:
         """Set track as current and start background resolution & playback."""

@@ -451,3 +451,55 @@ def test_play_track_worker_notifies_descriptive_stream_error(tmp_path):
     asyncio.run(_run())
 
 
+def test_app_handle_shuffle_play(tmp_path):
+    """Verify handle_shuffle_play fetches shuffled tracks, updates queue, and begins playback."""
+    async def _run():
+        cfg = BardConfig(config_path=tmp_path / "config.json")
+        client = MagicMock()
+        shuffled_tracks = [
+            Track(id="shuf_1", title="Track 1", artist="Artist", album="Album", duration_seconds=180, thumbnail_url=""),
+            Track(id="shuf_2", title="Track 2", artist="Artist", album="Album", duration_seconds=200, thumbnail_url=""),
+        ]
+        client.get_shuffled_playlist_tracks.return_value = shuffled_tracks
+        app = BardApp(cfg, client)
+        app.play_track = MagicMock()
+
+        notifications = []
+        async with app.run_test():
+            app.notify = lambda msg, **kwargs: notifications.append((msg, kwargs))
+            app.handle_shuffle_play({"id": "liked", "title": "❤️ Liked Songs", "type": "category"})
+            await asyncio.sleep(0.1)
+
+            assert len(app.queue) == 2
+            assert app.current_index == 0
+            assert app.queue[0].id == "shuf_1"
+            app.play_track.assert_called_once_with(shuffled_tracks[0])
+            assert app.drawer_widget.tracks == shuffled_tracks
+            assert any("Playing" in n[0] and "shuffle" in n[0] for n in notifications)
+
+    asyncio.run(_run())
+
+
+def test_app_shuffle_play_worker_empty_tracks(tmp_path):
+    """Verify _shuffle_play_worker gracefully warns when no tracks returned."""
+    async def _run():
+        cfg = BardConfig(config_path=tmp_path / "config.json")
+        client = MagicMock()
+        client.get_shuffled_playlist_tracks.return_value = []
+        app = BardApp(cfg, client)
+        app.play_track = MagicMock()
+
+        notifications = []
+        async with app.run_test():
+            app.notify = lambda msg, **kwargs: notifications.append((msg, kwargs))
+            app._shuffle_play_worker("empty_pid", "Empty Playlist")
+            await asyncio.sleep(0.1)
+
+            assert len(app.queue) == 0
+            app.play_track.assert_not_called()
+            assert any("No tracks found to shuffle" in n[0] for n in notifications)
+
+    asyncio.run(_run())
+
+
+

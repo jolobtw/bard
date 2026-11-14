@@ -42,9 +42,12 @@
 ### Inside the Playlists Drawer
 | Shortcut | Action |
 | :--- | :--- |
-| `↑` / `↓` or `W` / `S` | Navigate up / down in playlists or tracks |
-| `←` / `→` or `A` / `D` | Switch focus between Playlists column and Tracks column |
+| `↑` / `↓` | Navigate up / down in playlists or tracks |
+| `←` / `→` or `H` / `L` | Switch focus between Categories and Tracks |
 | `Enter` | Play highlighted playlist or track immediately |
+| `S` | **Shuffle Play** highlighted playlist or Liked Songs |
+| `/` | Open Search |
+| `Backspace` | Navigate back from album/playlist drill-down |
 
 ---
 
