@@ -267,12 +267,12 @@ class VolumeBar(Widget):
 
 
 class SeekBar(Widget):
-    """Full-width clickable seek bar with centered mm:ss / mm:ss timestamp."""
+    """Full-width clickable seek bar with compact mm:ss/mm:ss timestamp on the right."""
 
     DEFAULT_CSS = """
     SeekBar {
         width: 100%;
-        height: 2;
+        height: 1;
         background: #181A24;
         margin-top: 1;
     }
@@ -291,25 +291,25 @@ class SeekBar(Widget):
 
     def on_click(self, event: events.Click) -> None:
         if event.y == 0 and self.duration_ms > 0 and self.on_seek:
-            w = max(2, self.size.width)
-            pct = min(1.0, max(0.0, event.x / (w - 1)))
+            w = max(20, self.size.width or 80)
+            bar_w = max(10, w - 13)
+            pct = min(1.0, max(0.0, event.x / max(1, bar_w - 1)))
             target_sec = (self.duration_ms / 1000.0) * pct
             event.stop()
             self.on_seek(target_sec)
 
     def render(self) -> Text:
-        w = max(20, self.size.width or 80)
-        pct = min(1.0, max(0.0, self.progress_ms / self.duration_ms)) if self.duration_ms > 0 else 0.0
-        filled = int((w - 1) * pct)
-        unfilled = max(0, (w - 1) - filled)
-        bar_line = render_arcane_bar(filled, unfilled)
-
+        w = max(24, self.size.width or 80)
         curr_str = format_ms(self.progress_ms)
         total_str = format_ms(self.duration_ms)
-        ts = f"{curr_str} / {total_str}"
-        pad = max(0, (w - len(ts)) // 2)
-        ts_line = f"{' ' * pad}[#A6ADC8]{curr_str}[/] [#6C7086]/ {total_str}[/]"
-        return Text.from_markup(f"{bar_line}\n{ts_line}")
+        ts_plain = f"{curr_str}/{total_str}"
+        bar_w = max(10, w - len(ts_plain) - 2)
+
+        pct = min(1.0, max(0.0, self.progress_ms / self.duration_ms)) if self.duration_ms > 0 else 0.0
+        filled = int((bar_w - 1) * pct)
+        unfilled = max(0, (bar_w - 1) - filled)
+        bar_line = render_arcane_bar(filled, unfilled)
+        return Text.from_markup(f"{bar_line}  [dim #A6ADC8]{curr_str}[/][dim #6C7086]/{total_str}[/]")
 
 
 class ZenStage(Widget):
@@ -346,10 +346,10 @@ class ZenStage(Widget):
 
     #player-dock {
         width: 100%;
-        height: 10;
+        height: 7;
         background: #181A24;
         border: round #2E3244;
-        padding: 1 2;
+        padding: 0 2;
     }
 
     #dock-top-row {
