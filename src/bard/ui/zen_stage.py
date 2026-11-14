@@ -47,41 +47,29 @@ def render_flame_progress(progress_ms: int, duration_ms: int, width: int = 50) -
     return f"[#A6ADC8]{curr_str}[/]  {filled_bar}{unfilled_bar}  [#6C7086]{total_str}[/]"
 
 
-def _render_play_circle_rows(
+def _render_play_pill_row(
     is_playing: bool,
     is_active: bool,
     hovered: bool,
-) -> Tuple[str, str, str]:
-    """
-    Render a 7x3 chamfered circle for the Play/Pause control using 24-bit TrueColor half-blocks.
-    """
+) -> str:
+    """Render a smooth Nerd Font Powerline-capped Play/Pause pill."""
     if is_playing or hovered:
-        fg = (255, 146, 43) if hovered else (255, 122, 0)  # #FF922B / #FF7A00
-        icon_fg = (19, 20, 28)  # #13141C
+        pill_rgb = (255, 146, 43) if hovered else (255, 122, 0)  # #FF922B / #FF7A00
+        icon_rgb = (19, 20, 28)  # #13141C
     elif is_active:
-        fg = (38, 41, 56)  # #262938
-        icon_fg = (255, 209, 102)  # #FFD166
+        pill_rgb = (38, 41, 56)  # #262938
+        icon_rgb = (255, 209, 102)  # #FFD166
     else:
-        fg = (38, 41, 56)
-        icon_fg = (166, 173, 200)  # #A6ADC8
+        pill_rgb = (38, 41, 56)
+        icon_rgb = (166, 173, 200)  # #A6ADC8
 
-    bg = (24, 26, 36)  # #181A24
-    fg_c = f"\x1b[38;2;{fg[0]};{fg[1]};{fg[2]}m"
-    fg_on_bg = f"\x1b[38;2;{fg[0]};{fg[1]};{fg[2]}m\x1b[48;2;{bg[0]};{bg[1]};{bg[2]}m"
-    bg_on_fg = f"\x1b[38;2;{icon_fg[0]};{icon_fg[1]};{icon_fg[2]}m\x1b[48;2;{fg[0]};{fg[1]};{fg[2]}m"
-    solid_fg = f"{fg_c}\x1b[48;2;{fg[0]};{fg[1]};{fg[2]}m"
+    bg_rgb = (24, 26, 36)  # #181A24
+    cap = f"\x1b[38;2;{pill_rgb[0]};{pill_rgb[1]};{pill_rgb[2]}m\x1b[48;2;{bg_rgb[0]};{bg_rgb[1]};{bg_rgb[2]}m"
+    inner = f"\x1b[38;2;{icon_rgb[0]};{icon_rgb[1]};{icon_rgb[2]}m\x1b[48;2;{pill_rgb[0]};{pill_rgb[1]};{pill_rgb[2]}m"
     rst = "\x1b[0m"
 
-    # Row 0: chamfered top (5 full middle, 2 bottom-half corners)
-    row0 = f"{fg_on_bg}▄{solid_fg}█████{fg_on_bg}▄{rst}"
-    # Row 1: full 7-wide center with centered glyph
-    if is_playing:
-        row1 = f"{solid_fg}  {bg_on_fg}❚ ❚{solid_fg}  {rst}"
-    else:
-        row1 = f"{solid_fg}   {bg_on_fg}▶{solid_fg}   {rst}"
-    # Row 2: chamfered bottom
-    row2 = f"{fg_on_bg}▀{solid_fg}█████{fg_on_bg}▀{rst}"
-    return (row0, row1, row2)
+    glyph = "󰏤" if is_playing else "󰐊"
+    return f"{cap}\ue0b6{inner}  {glyph}  {cap}\ue0b4{rst}"
 
 
 class TransportBar(Widget):
@@ -160,7 +148,7 @@ class TransportBar(Widget):
             self.on_shuffle()
 
     def render(self) -> Text:
-        r0, r1, r2 = _render_play_circle_rows(
+        pill = _render_play_pill_row(
             is_playing=self.is_playing,
             is_active=self.has_track,
             hovered=(self._hover_zone == "play"),
@@ -179,18 +167,16 @@ class TransportBar(Widget):
             return f"\x1b[38;2;{rgb[0]};{rgb[1]};{rgb[2]}m{_DOCK_BG_ANSI}"
 
         rst = "\x1b[0m"
-        blank = f"{_DOCK_BG_ANSI}    {rst}"
+        full_blank = f"{_DOCK_BG_ANSI}{' ' * 24}{rst}"
         gap = f"{_DOCK_BG_ANSI} {rst}"
 
-        line0 = f"{blank}{gap}{r0}{gap}{blank}{gap}{_DOCK_BG_ANSI}    {rst}"
         line1 = (
             f"{_fg(prev_rgb)} 󰒮  {rst}"
-            f"{gap}{r1}{gap}"
+            f"{gap}{pill}{gap}"
             f"{_fg(next_rgb)} 󰒭  {rst}"
             f"{gap}{_fg(shuf_rgb)} 󰒟  {rst}"
         )
-        line2 = f"{blank}{gap}{r2}{gap}{blank}{gap}{_DOCK_BG_ANSI}    {rst}"
-        return Text.from_ansi(f"{line0}\n{line1}\n{line2}")
+        return Text.from_ansi(f"{full_blank}\n{line1}\n{full_blank}")
 
 
 class VolumeBar(Widget):
@@ -348,21 +334,10 @@ class ZenStage(Widget):
         align: center middle;
     }
 
-    #dock-left {
-        width: 1fr;
-        height: 3;
-    }
-
-    #dock-viz {
-        width: 7;
-        height: 3;
-        margin-right: 1;
-        color: #FF7A00;
-    }
-
     #dock-meta {
         width: 1fr;
         height: 3;
+        padding-right: 1;
     }
 
     #track-kicker {
@@ -484,12 +459,10 @@ class ZenStage(Widget):
                     yield TIImage(id="art-box")
                 with Vertical(id="player-dock"):
                     with Horizontal(id="dock-top-row"):
-                        with Horizontal(id="dock-left"):
-                            yield Static(id="dock-viz")
-                            with Vertical(id="dock-meta"):
-                                yield Static("NOW PLAYING", id="track-kicker")
-                                yield Static(id="track-title")
-                                yield Static(id="track-meta")
+                        with Vertical(id="dock-meta"):
+                            yield Static("NOW PLAYING", id="track-kicker")
+                            yield Static(id="track-title")
+                            yield Static(id="track-meta")
                         yield TransportBar(
                             on_prev=self._handle_prev,
                             on_play_pause=self._handle_play_pause,
@@ -593,7 +566,6 @@ class ZenStage(Widget):
 
         art_center = self.query_one("#art-center")
         art_widget = self.query_one("#art-box", TIImage)
-        viz_widget = self.query_one("#dock-viz", Static)
         kicker_widget = self.query_one("#track-kicker", Static)
         title_widget = self.query_one("#track-title", Static)
         meta_widget = self.query_one("#track-meta", Static)
@@ -624,7 +596,6 @@ class ZenStage(Widget):
                 art_center.display = False
             if art_widget.image is not None:
                 art_widget.image = None
-            viz_widget.update("[#2E3244]  ▄    \n▄ █ ▄  \n█ █ █ ▄[/]")
             kicker_widget.update("[#FF7A00]✦ READY TO STREAM[/]")
             theme = load_theme()
             palette = theme.get("palette", {})
@@ -659,15 +630,13 @@ class ZenStage(Widget):
         device_name = self.playback_data.get("device_name", self.device_name or "YouTube Music")
 
         if is_playing:
-            viz_widget.update("[#FF7A00]  █   ▄\n▄ █ █ █\n█ █ █ █[/]")
             kicker_widget.update("[#FF7A00]NOW PLAYING[/]")
         else:
-            viz_widget.update("[#363B54]  ▄    \n▄ █ ▄  \n█ █ █ ▄[/]")
             kicker_widget.update("[#6C7086]PAUSED[/]")
 
-        title_trunc = title if len(title) <= 28 else title[:27] + "…"
+        title_trunc = title if len(title) <= 34 else title[:33] + "…"
         meta_raw = f"{artist} • {album}" if album else artist
-        meta_trunc = meta_raw if len(meta_raw) <= 30 else meta_raw[:29] + "…"
+        meta_trunc = meta_raw if len(meta_raw) <= 36 else meta_raw[:35] + "…"
         title_widget.update(f"[bold #FFFFFF]{title_trunc}[/]")
         meta_widget.update(f"[#A6ADC8]{meta_trunc}[/]")
 
