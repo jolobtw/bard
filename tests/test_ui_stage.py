@@ -16,6 +16,15 @@ def test_render_flame_progress():
     assert "●" in output
 
 
+def test_render_arcane_bar_gradient():
+    from bard.ui.zen_stage import render_arcane_bar
+    bar = render_arcane_bar(filled=10, unfilled=5)
+    assert "#FF4500" in bar
+    assert "#FFD166" in bar
+    assert "●" in bar
+    assert "─" * 5 in bar
+
+
 def test_zen_stage_empty_state_rendering():
     from textual.app import App, ComposeResult
     from textual_image.widget import Image as TIImage

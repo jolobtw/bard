@@ -11,10 +11,29 @@ from textual.widget import Widget
 from textual.widgets import Static
 from textual_image.widget import Image as TIImage
 
-from bard.arcane_theme import load_theme, render_rich_gradient
+from bard.arcane_theme import DEFAULT_THEME, hex_to_rgb, interpolate_rgb, load_theme, render_rich_gradient
 from bard.art import fetch_pil_image, render_album_art
 
 _DOCK_BG_ANSI = "\x1b[48;2;24;26;36m"  # #181A24
+_PALETTE = DEFAULT_THEME["palette"]
+_GRAD_START_RGB = hex_to_rgb(_PALETTE.get("gradient_start", "#FF4500"))
+_GRAD_END_RGB = hex_to_rgb(_PALETTE.get("gradient_end", "#FFD166"))
+_TRACK_MUTED_HEX = _PALETTE.get("border_muted", "#2E3244")
+_THUMB_GOLD_HEX = _PALETTE.get("accent_gold", "#FFD166")
+
+
+def render_arcane_bar(filled: int, unfilled: int) -> str:
+    """Render a smooth Arcane flame-to-gold gradient bar with a glowing thumb and muted track."""
+    parts = []
+    if filled > 0:
+        for i in range(filled):
+            factor = i / max(1, filled)
+            color = interpolate_rgb(_GRAD_START_RGB, _GRAD_END_RGB, factor)
+            parts.append(f"[{color}]━[/]")
+    parts.append(f"[bold {_THUMB_GOLD_HEX}]●[/]")
+    if unfilled > 0:
+        parts.append(f"[{_TRACK_MUTED_HEX}]{'─' * unfilled}[/]")
+    return "".join(parts)
 
 
 def format_ms(ms: int) -> str:
@@ -37,14 +56,9 @@ def render_flame_progress(progress_ms: int, duration_ms: int, width: int = 50) -
     bar_width = max(10, width - len(curr_str) - len(total_str) - 4)
     filled_len = int(bar_width * pct)
     unfilled_len = bar_width - filled_len
+    bar = render_arcane_bar(max(0, filled_len - 1), max(0, unfilled_len))
 
-    if filled_len > 0:
-        filled_bar = f"[#FF7A00]{'━' * max(0, filled_len - 1)}[#FFD166]●[/]"
-    else:
-        filled_bar = "[#FFD166]●[/]"
-    unfilled_bar = f"[#2E3244]{'─' * max(0, unfilled_len)}[/]"
-
-    return f"[#A6ADC8]{curr_str}[/]  {filled_bar}{unfilled_bar}  [#6C7086]{total_str}[/]"
+    return f"[#A6ADC8]{curr_str}[/]  {bar}  [#6C7086]{total_str}[/]"
 
 
 def _render_play_pill_row(
@@ -230,7 +244,7 @@ class VolumeBar(Widget):
         bar_w = 19
         filled = round((self.volume / 100.0) * (bar_w - 1))
         unfilled = (bar_w - 1) - filled
-        slider = f"[#FF7A00]{'━' * filled}[#FFD166]●[/][#2E3244]{'─' * unfilled}[/]"
+        slider = render_arcane_bar(filled, unfilled)
         line1 = f" {speaker} {slider}"
 
         dev = self.device_name or "YouTube Music"
@@ -278,7 +292,7 @@ class SeekBar(Widget):
         pct = min(1.0, max(0.0, self.progress_ms / self.duration_ms)) if self.duration_ms > 0 else 0.0
         filled = int((w - 1) * pct)
         unfilled = max(0, (w - 1) - filled)
-        bar_line = f"[#FF7A00]{'━' * filled}[#FFD166]●[/][#2E3244]{'─' * unfilled}[/]"
+        bar_line = render_arcane_bar(filled, unfilled)
 
         curr_str = format_ms(self.progress_ms)
         total_str = format_ms(self.duration_ms)
