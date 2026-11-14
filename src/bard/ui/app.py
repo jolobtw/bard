@@ -39,6 +39,7 @@ class BardApp(App):
         Binding("n", "next_track", "Next"),
         Binding("p", "prev_track", "Previous"),
         Binding("s", "toggle_shuffle", "Shuffle"),
+        Binding("r", "cycle_repeat", "Repeat"),
         Binding("m", "toggle_mute", "Mute"),
         Binding("+", "volume_up", "Vol +"),
         Binding("=", "volume_up", "Vol +", show=False),
@@ -63,6 +64,7 @@ class BardApp(App):
             on_play_pause=self.action_toggle_playback,
             on_next=self.action_next_track,
             on_shuffle=self.action_toggle_shuffle,
+            on_repeat=self.action_cycle_repeat,
             on_seek=self.action_seek_to,
             on_volume=self.action_set_volume,
             on_mute=self.action_toggle_mute,
@@ -78,6 +80,7 @@ class BardApp(App):
         self.queue: List[Track] = []
         self._original_queue: List[Track] = []
         self.shuffle_enabled: bool = False
+        self.repeat_mode: str = "off"
         self.current_index: int = -1
         self.current_track: Optional[Track] = None
 
@@ -141,7 +144,10 @@ class BardApp(App):
                     self._had_started = False
                     self._last_known_pos = 0.0
                     self._last_known_dur = 0.0
-                    self.action_next_track()
+                    if self.repeat_mode == "one" and self.current_track is not None:
+                        self.play_track(self.current_track)
+                    else:
+                        self.action_next_track()
         else:
             self.stage_widget.tick_progress(1000)
 
@@ -411,11 +417,13 @@ class BardApp(App):
             )
 
     def action_next_track(self) -> None:
-        """Skip to next track in queue."""
+        """Skip to next track in queue (wraps if repeat_mode == 'all')."""
         if self.queue and len(self.queue) > 0:
             next_idx = self.current_index + 1
             if next_idx < len(self.queue):
                 self.play_track_at_index(next_idx)
+            elif self.repeat_mode == "all":
+                self.play_track_at_index(0)
             else:
                 self.notify("Queue completed. Press [Tab] to browse more tracks.", title="Bard Queue", severity="information", timeout=3)
         else:
@@ -439,6 +447,8 @@ class BardApp(App):
 
         if self.queue and self.current_index > 0:
             self.play_track_at_index(self.current_index - 1)
+        elif self.queue and self.repeat_mode == "all" and len(self.queue) > 1:
+            self.play_track_at_index(len(self.queue) - 1)
         elif self.player:
             try:
                 self.player.seek(-pos)
@@ -474,6 +484,13 @@ class BardApp(App):
                         matching = [i for i, t in enumerate(self.queue) if t.id == self.current_track.id]
                         self.current_index = matching[0] if matching else 0
         self.stage_widget.set_shuffle(self.shuffle_enabled)
+
+    def action_cycle_repeat(self) -> None:
+        """Cycle repeat mode: off -> all -> one -> off."""
+        order = ("off", "all", "one")
+        idx = order.index(self.repeat_mode) if self.repeat_mode in order else 0
+        self.repeat_mode = order[(idx + 1) % len(order)]
+        self.stage_widget.set_repeat(self.repeat_mode)
 
     def action_volume_up(self) -> None:
         """Increase volume by 5%."""

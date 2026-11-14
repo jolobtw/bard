@@ -531,11 +531,15 @@ def test_app_transport_buttons_clickable_in_app(tmp_path):
         app.current_track = t1
 
         async with app.run_test(size=(100, 40)) as pilot:
-            await pilot.click("#transport-controls", offset=(20, 1))  # Shuffle
+            await pilot.click("#transport-controls", offset=(6, 2))   # Shuffle (row 2)
             await pilot.pause()
             assert app.shuffle_enabled is True
 
-            await pilot.click("#transport-controls", offset=(8, 1))  # Play/Pause circle
+            await pilot.click("#transport-controls", offset=(10, 2))  # Repeat (row 2)
+            await pilot.pause()
+            assert app.repeat_mode == "all"
+
+            await pilot.click("#transport-controls", offset=(8, 1))   # Play/Pause pill
             await pilot.pause()
             player.pause.assert_called_once()
 
@@ -545,13 +549,58 @@ def test_app_transport_buttons_clickable_in_app(tmp_path):
             assert app.current_index == 1
             assert app.current_track == t2
 
-            await pilot.click("#transport-controls", offset=(1, 1))  # Prev
+            await pilot.click("#transport-controls", offset=(1, 1))   # Prev
             await pilot.pause()
             await asyncio.sleep(0.1)
             assert app.current_index == 0
             assert app.current_track == t1
 
     asyncio.run(_run())
+
+
+def test_action_cycle_repeat_and_playback_modes(tmp_path):
+    cfg = BardConfig(config_path=tmp_path / "config.json")
+    client = MagicMock()
+    player = MagicMock()
+    app = BardApp(cfg, client, player=player)
+
+    keys = [b.key for b in app.BINDINGS]
+    assert "r" in keys
+    assert app.repeat_mode == "off"
+
+    app.action_cycle_repeat()
+    assert app.repeat_mode == "all"
+    assert app.stage_widget.repeat_mode == "all"
+
+    app.action_cycle_repeat()
+    assert app.repeat_mode == "one"
+    assert app.stage_widget.repeat_mode == "one"
+
+    app.action_cycle_repeat()
+    assert app.repeat_mode == "off"
+    assert app.stage_widget.repeat_mode == "off"
+
+    # Repeat all wraps next_track from end of queue to index 0
+    t1 = Track("1", "T1", "A", "Alb", 120, "")
+    t2 = Track("2", "T2", "A", "Alb", 120, "")
+    app.queue = [t1, t2]
+    app.current_index = 1
+    app.current_track = t2
+    app.play_track_at_index = MagicMock()
+    app.repeat_mode = "all"
+    app.action_next_track()
+    app.play_track_at_index.assert_called_once_with(0)
+
+    # Repeat one replays current track on completion
+    app.repeat_mode = "one"
+    app.play_track = MagicMock()
+    app._had_started = True
+    app._user_paused = False
+    app._last_known_pos = 119.0
+    app._last_known_dur = 120.0
+    player.is_playing.return_value = False
+    app.on_progress_tick()
+    app.play_track.assert_called_once_with(t2)
 
 
 def test_app_shuffle_play_worker_empty_tracks(tmp_path):
@@ -653,11 +702,15 @@ def test_app_transport_buttons_clickable_in_app(tmp_path):
         app.current_track = t1
 
         async with app.run_test(size=(100, 40)) as pilot:
-            await pilot.click("#transport-controls", offset=(20, 1))  # Shuffle
+            await pilot.click("#transport-controls", offset=(6, 2))   # Shuffle (row 2)
             await pilot.pause()
             assert app.shuffle_enabled is True
 
-            await pilot.click("#transport-controls", offset=(8, 1))  # Play/Pause circle
+            await pilot.click("#transport-controls", offset=(10, 2))  # Repeat (row 2)
+            await pilot.pause()
+            assert app.repeat_mode == "all"
+
+            await pilot.click("#transport-controls", offset=(8, 1))   # Play/Pause pill
             await pilot.pause()
             player.pause.assert_called_once()
 
@@ -667,13 +720,58 @@ def test_app_transport_buttons_clickable_in_app(tmp_path):
             assert app.current_index == 1
             assert app.current_track == t2
 
-            await pilot.click("#transport-controls", offset=(1, 1))  # Prev
+            await pilot.click("#transport-controls", offset=(1, 1))   # Prev
             await pilot.pause()
             await asyncio.sleep(0.1)
             assert app.current_index == 0
             assert app.current_track == t1
 
     asyncio.run(_run())
+
+
+def test_action_cycle_repeat_and_playback_modes(tmp_path):
+    cfg = BardConfig(config_path=tmp_path / "config.json")
+    client = MagicMock()
+    player = MagicMock()
+    app = BardApp(cfg, client, player=player)
+
+    keys = [b.key for b in app.BINDINGS]
+    assert "r" in keys
+    assert app.repeat_mode == "off"
+
+    app.action_cycle_repeat()
+    assert app.repeat_mode == "all"
+    assert app.stage_widget.repeat_mode == "all"
+
+    app.action_cycle_repeat()
+    assert app.repeat_mode == "one"
+    assert app.stage_widget.repeat_mode == "one"
+
+    app.action_cycle_repeat()
+    assert app.repeat_mode == "off"
+    assert app.stage_widget.repeat_mode == "off"
+
+    # Repeat all wraps next_track from end of queue to index 0
+    t1 = Track("1", "T1", "A", "Alb", 120, "")
+    t2 = Track("2", "T2", "A", "Alb", 120, "")
+    app.queue = [t1, t2]
+    app.current_index = 1
+    app.current_track = t2
+    app.play_track_at_index = MagicMock()
+    app.repeat_mode = "all"
+    app.action_next_track()
+    app.play_track_at_index.assert_called_once_with(0)
+
+    # Repeat one replays current track on completion
+    app.repeat_mode = "one"
+    app.play_track = MagicMock()
+    app._had_started = True
+    app._user_paused = False
+    app._last_known_pos = 119.0
+    app._last_known_dur = 120.0
+    player.is_playing.return_value = False
+    app.on_progress_tick()
+    app.play_track.assert_called_once_with(t2)
 
 
 

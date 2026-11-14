@@ -88,23 +88,26 @@ def _render_play_pill_row(
 
 
 class TransportBar(Widget):
-    """Custom mouse-hit-tested transport bar: Prev, Circle Play/Pause, Next, Shuffle."""
+    """Custom mouse-hit-tested transport bar: Prev, Play/Pause Pill, Next; Shuffle & Repeat below."""
 
     DEFAULT_CSS = """
     TransportBar {
-        width: 22;
+        width: 17;
         height: 3;
         background: #181A24;
     }
     """
 
-    # Hit zones along X (width 22):
-    # [0..3]: Prev   [5..11]: Play Pill   [13..16]: Next   [18..21]: Shuffle
-    ZONES = (
+    # Row 0-1 (top): [0..3] Prev, [5..11] Play Pill, [13..16] Next
+    # Row 2 (bottom): [5..7] Shuffle, [9..11] Repeat
+    TOP_ZONES = (
         ("prev", 0, 4),
         ("play", 5, 12),
         ("next", 13, 17),
-        ("shuffle", 18, 22),
+    )
+    BOTTOM_ZONES = (
+        ("shuffle", 5, 8),
+        ("repeat", 9, 12),
     )
 
     def __init__(
@@ -113,6 +116,7 @@ class TransportBar(Widget):
         on_play_pause: Optional[Callable[[], None]] = None,
         on_next: Optional[Callable[[], None]] = None,
         on_shuffle: Optional[Callable[[], None]] = None,
+        on_repeat: Optional[Callable[[], None]] = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -120,25 +124,42 @@ class TransportBar(Widget):
         self.on_play_pause = on_play_pause
         self.on_next = on_next
         self.on_shuffle = on_shuffle
+        self.on_repeat = on_repeat
         self.is_playing: bool = False
         self.has_track: bool = False
         self.shuffle_enabled: bool = False
+        self.repeat_mode: str = "off"
         self._hover_zone: Optional[str] = None
 
-    def set_state(self, is_playing: bool, has_track: bool, shuffle_enabled: bool) -> None:
+    def set_state(
+        self,
+        is_playing: bool,
+        has_track: bool,
+        shuffle_enabled: bool,
+        repeat_mode: str = "off",
+    ) -> None:
+        if (
+            self.is_playing == is_playing
+            and self.has_track == has_track
+            and self.shuffle_enabled == shuffle_enabled
+            and self.repeat_mode == repeat_mode
+        ):
+            return
         self.is_playing = is_playing
         self.has_track = has_track
         self.shuffle_enabled = shuffle_enabled
+        self.repeat_mode = repeat_mode
         self.refresh()
 
-    def _zone_at(self, x: int) -> Optional[str]:
-        for name, start, end in self.ZONES:
+    def _zone_at(self, x: int, y: int) -> Optional[str]:
+        zones = self.BOTTOM_ZONES if y >= 2 else self.TOP_ZONES
+        for name, start, end in zones:
             if start <= x < end:
                 return name
         return None
 
     def on_mouse_move(self, event: events.MouseMove) -> None:
-        zone = self._zone_at(event.x)
+        zone = self._zone_at(event.x, event.y)
         if zone != self._hover_zone:
             self._hover_zone = zone
             self.refresh()
@@ -149,7 +170,7 @@ class TransportBar(Widget):
             self.refresh()
 
     def on_click(self, event: events.Click) -> None:
-        zone = self._zone_at(event.x)
+        zone = self._zone_at(event.x, event.y)
         if not zone:
             return
         event.stop()
@@ -161,6 +182,8 @@ class TransportBar(Widget):
             self.on_next()
         elif zone == "shuffle" and self.on_shuffle:
             self.on_shuffle()
+        elif zone == "repeat" and self.on_repeat:
+            self.on_repeat()
 
     def render(self) -> Text:
         pill = _render_play_pill_row(
@@ -178,20 +201,37 @@ class TransportBar(Widget):
         else:
             shuf_rgb = (108, 112, 134)
 
+        if self._hover_zone == "repeat":
+            rep_rgb = (255, 255, 255) if self.repeat_mode == "one" else (255, 209, 102)
+        elif self.repeat_mode == "one":
+            rep_rgb = (255, 209, 102)
+        elif self.repeat_mode == "all":
+            rep_rgb = (255, 122, 0)
+        else:
+            rep_rgb = (108, 112, 134)
+
+        rep_glyph = "󰑘" if self.repeat_mode == "one" else "󰑖"
+
         def _fg(rgb: Tuple[int, int, int]) -> str:
             return f"\x1b[38;2;{rgb[0]};{rgb[1]};{rgb[2]}m{_DOCK_BG_ANSI}"
 
         rst = "\x1b[0m"
-        full_blank = f"{_DOCK_BG_ANSI}{' ' * 22}{rst}"
         gap = f"{_DOCK_BG_ANSI} {rst}"
 
+        line0 = f"{_DOCK_BG_ANSI}{' ' * 17}{rst}"
         line1 = (
             f"{_fg(prev_rgb)} 󰒮  {rst}"
             f"{gap}{pill}{gap}"
-            f"{_fg(next_rgb)} 󰒭  {rst}"
-            f"{gap}{_fg(shuf_rgb)} 󰒟 {rst}"
+            f"{_fg(next_rgb)}  󰒭 {rst}"
         )
-        return Text.from_ansi(f"{full_blank}\n{line1}\n{full_blank}")
+        line2 = (
+            f"{_DOCK_BG_ANSI}     {rst}"
+            f"{_fg(shuf_rgb)} 󰒟 {rst}"
+            f"{gap}"
+            f"{_fg(rep_rgb)} {rep_glyph} {rst}"
+            f"{_DOCK_BG_ANSI}     {rst}"
+        )
+        return Text.from_ansi(f"{line0}\n{line1}\n{line2}")
 
 
 class VolumeBar(Widget):
@@ -401,6 +441,7 @@ class ZenStage(Widget):
         on_play_pause: Optional[Callable[[], None]] = None,
         on_next: Optional[Callable[[], None]] = None,
         on_shuffle: Optional[Callable[[], None]] = None,
+        on_repeat: Optional[Callable[[], None]] = None,
         on_seek: Optional[Callable[[float], None]] = None,
         on_volume: Optional[Callable[[int], None]] = None,
         on_mute: Optional[Callable[[], None]] = None,
@@ -410,10 +451,12 @@ class ZenStage(Widget):
         self.on_play_pause = on_play_pause
         self.on_next = on_next
         self.on_shuffle = on_shuffle
+        self.on_repeat = on_repeat
         self.on_seek = on_seek
         self.on_volume = on_volume
         self.on_mute = on_mute
         self.shuffle_enabled: bool = False
+        self.repeat_mode: str = "off"
         self.playback_data: Optional[Dict[str, Any]] = None
         self._current_progress_ms: int = 0
         self._last_art_url: str = ""
@@ -429,6 +472,14 @@ class ZenStage(Widget):
     def set_shuffle(self, enabled: bool) -> None:
         """Update shuffle toggle state and refresh transport controls."""
         self.shuffle_enabled = enabled
+        self._sync_transport()
+
+    def set_repeat(self, mode: str) -> None:
+        """Update repeat mode ('off', 'all', 'one') and refresh transport controls."""
+        self.repeat_mode = mode if mode in ("off", "all", "one") else "off"
+        self._sync_transport()
+
+    def _sync_transport(self) -> None:
         if self.is_mounted:
             try:
                 transport = self.query_one("#transport-controls", TransportBar)
@@ -437,6 +488,7 @@ class ZenStage(Widget):
                     is_playing=is_playing,
                     has_track=bool(self.playback_data),
                     shuffle_enabled=self.shuffle_enabled,
+                    repeat_mode=self.repeat_mode,
                 )
                 return
             except Exception:
@@ -518,6 +570,7 @@ class ZenStage(Widget):
                             on_play_pause=self._handle_play_pause,
                             on_next=self._handle_next,
                             on_shuffle=self._handle_shuffle,
+                            on_repeat=self._handle_repeat,
                             id="transport-controls",
                         )
                         with Horizontal(id="dock-right"):
@@ -552,6 +605,12 @@ class ZenStage(Widget):
             self.on_shuffle()
         elif self.app and hasattr(self.app, "action_toggle_shuffle"):
             self.app.action_toggle_shuffle()
+
+    def _handle_repeat(self) -> None:
+        if self.on_repeat:
+            self.on_repeat()
+        elif self.app and hasattr(self.app, "action_cycle_repeat"):
+            self.app.action_cycle_repeat()
 
     def _handle_seek(self, position_seconds: float) -> None:
         if self.on_seek:
@@ -636,6 +695,9 @@ class ZenStage(Widget):
                     ("S", "bold #FFD166"),
                     (" Shuffle", "#6C7086"),
                     ("   •   ", "#2E3244"),
+                    ("R", "bold #FFD166"),
+                    (" Repeat", "#6C7086"),
+                    ("   •   ", "#2E3244"),
                     ("+/-", "bold #FFD166"),
                     (" Volume", "#6C7086"),
                     ("   •   ", "#2E3244"),
@@ -672,7 +734,12 @@ class ZenStage(Widget):
                     layout=False,
                 )
                 self._last_meta = "__EMPTY__"
-            transport.set_state(is_playing=False, has_track=False, shuffle_enabled=self.shuffle_enabled)
+            transport.set_state(
+                is_playing=False,
+                has_track=False,
+                shuffle_enabled=self.shuffle_enabled,
+                repeat_mode=self.repeat_mode,
+            )
             volume_bar.set_state(volume=100, device_name=self.device_name or "YouTube Music")
             seek_bar.set_progress(0, 0)
             return
@@ -710,7 +777,12 @@ class ZenStage(Widget):
             meta_widget.update(f"[dim #A6ADC8]{meta_trunc}[/]", layout=False)
             self._last_meta = meta_trunc
 
-        transport.set_state(is_playing=is_playing, has_track=True, shuffle_enabled=self.shuffle_enabled)
+        transport.set_state(
+            is_playing=is_playing,
+            has_track=True,
+            shuffle_enabled=self.shuffle_enabled,
+            repeat_mode=self.repeat_mode,
+        )
         volume_bar.set_state(volume=volume, device_name=device_name)
         seek_bar.set_progress(self._current_progress_ms, duration)
 

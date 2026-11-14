@@ -174,6 +174,7 @@ def test_zen_stage_clickable_transport_buttons_and_shuffle():
                 on_play_pause=lambda: calls.append("play_pause"),
                 on_next=lambda: calls.append("next"),
                 on_shuffle=lambda: calls.append("shuffle"),
+                on_repeat=lambda: calls.append("repeat"),
                 on_seek=lambda sec: calls.append(("seek", round(sec, 1))),
                 on_volume=lambda vol: calls.append(("vol", vol)),
                 on_mute=lambda: calls.append("mute"),
@@ -189,16 +190,20 @@ def test_zen_stage_clickable_transport_buttons_and_shuffle():
 
             assert transport.is_playing is False
             assert transport.shuffle_enabled is False
+            assert transport.repeat_mode == "off"
 
             # Click each hit-zone inside TransportBar
             await pilot.click("#transport-controls", offset=(1, 1))   # Prev
-            await pilot.click("#transport-controls", offset=(8, 1))   # Play circle
+            await pilot.click("#transport-controls", offset=(8, 1))   # Play pill
             await pilot.click("#transport-controls", offset=(14, 1))  # Next
-            await pilot.click("#transport-controls", offset=(20, 1))  # Shuffle
-            assert calls[:4] == ["prev", "play_pause", "next", "shuffle"]
+            await pilot.click("#transport-controls", offset=(6, 2))   # Shuffle (row 2)
+            await pilot.click("#transport-controls", offset=(10, 2))  # Repeat (row 2)
+            assert calls[:5] == ["prev", "play_pause", "next", "shuffle", "repeat"]
 
             stage.set_shuffle(True)
             assert transport.shuffle_enabled is True
+            stage.set_repeat("one")
+            assert transport.repeat_mode == "one"
 
             stage.update_playback({
                 "title": "Test Song",
