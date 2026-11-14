@@ -90,19 +90,19 @@ class TransportBar(Widget):
 
     DEFAULT_CSS = """
     TransportBar {
-        width: 24;
+        width: 22;
         height: 3;
         background: #181A24;
     }
     """
 
-    # Hit zones along X (width 24):
-    # [0..3]: Prev   [5..11]: Play Circle   [13..16]: Next   [18..21]: Shuffle
+    # Hit zones along X (width 22):
+    # [0..3]: Prev   [5..11]: Play Pill   [13..16]: Next   [18..21]: Shuffle
     ZONES = (
         ("prev", 0, 4),
         ("play", 5, 12),
         ("next", 13, 17),
-        ("shuffle", 18, 23),
+        ("shuffle", 18, 22),
     )
 
     def __init__(
@@ -180,14 +180,14 @@ class TransportBar(Widget):
             return f"\x1b[38;2;{rgb[0]};{rgb[1]};{rgb[2]}m{_DOCK_BG_ANSI}"
 
         rst = "\x1b[0m"
-        full_blank = f"{_DOCK_BG_ANSI}{' ' * 24}{rst}"
+        full_blank = f"{_DOCK_BG_ANSI}{' ' * 22}{rst}"
         gap = f"{_DOCK_BG_ANSI} {rst}"
 
         line1 = (
             f"{_fg(prev_rgb)} 󰒮  {rst}"
             f"{gap}{pill}{gap}"
             f"{_fg(next_rgb)} 󰒭  {rst}"
-            f"{gap}{_fg(shuf_rgb)} 󰒟  {rst}"
+            f"{gap}{_fg(shuf_rgb)} 󰒟 {rst}"
         )
         return Text.from_ansi(f"{full_blank}\n{line1}\n{full_blank}")
 
@@ -361,7 +361,13 @@ class ZenStage(Widget):
     #dock-meta {
         width: 1fr;
         height: 3;
-        padding-right: 1;
+        padding-right: 2;
+    }
+
+    #dock-right {
+        width: 1fr;
+        height: 3;
+        align: right middle;
     }
 
     #track-kicker {
@@ -512,11 +518,12 @@ class ZenStage(Widget):
                             on_shuffle=self._handle_shuffle,
                             id="transport-controls",
                         )
-                        yield VolumeBar(
-                            on_volume=self._handle_volume,
-                            on_mute=self._handle_mute,
-                            id="volume-control",
-                        )
+                        with Horizontal(id="dock-right"):
+                            yield VolumeBar(
+                                on_volume=self._handle_volume,
+                                on_mute=self._handle_mute,
+                                id="volume-control",
+                            )
                     yield SeekBar(on_seek=self._handle_seek, id="progress-bar")
                 yield Static(id="controls-hint")
 
@@ -644,7 +651,7 @@ class ZenStage(Widget):
                 art_widget.update("")
                 self._last_art_drawn = ""
             if self._last_kicker != "READY":
-                kicker_widget.update("[#FF7A00]✦ READY TO STREAM[/]", layout=False)
+                kicker_widget.update("[dim #FF7A00]✦ READY[/]", layout=False)
                 self._last_kicker = "READY"
             if self._last_title != "__EMPTY__":
                 theme = load_theme()
@@ -656,9 +663,9 @@ class ZenStage(Widget):
             if self._last_meta != "__EMPTY__":
                 meta_widget.update(
                     Text.assemble(
-                        ("Press ", "#A6ADC8"),
+                        ("Press ", "dim #A6ADC8"),
                         ("[Tab]", "bold #FFD166"),
-                        (" to explore", "#A6ADC8"),
+                        (" to explore", "dim #A6ADC8"),
                     ),
                     layout=False,
                 )
@@ -685,20 +692,20 @@ class ZenStage(Widget):
         kicker_key = "PLAYING" if is_playing else "PAUSED"
         if self._last_kicker != kicker_key:
             if is_playing:
-                kicker_widget.update("[#FF7A00]NOW PLAYING[/]", layout=False)
+                kicker_widget.update("[dim #FF7A00]NOW PLAYING[/]", layout=False)
             else:
-                kicker_widget.update("[#6C7086]PAUSED[/]", layout=False)
+                kicker_widget.update("[dim #6C7086]PAUSED[/]", layout=False)
             self._last_kicker = kicker_key
 
-        title_trunc = title if len(title) <= 34 else title[:33] + "…"
+        title_trunc = title if len(title) <= 24 else title[:23] + "…"
         if self._last_title != title_trunc:
             title_widget.update(f"[bold #FFFFFF]{title_trunc}[/]", layout=False)
             self._last_title = title_trunc
 
         meta_raw = f"{artist} • {album}" if album else artist
-        meta_trunc = meta_raw if len(meta_raw) <= 36 else meta_raw[:35] + "…"
+        meta_trunc = meta_raw if len(meta_raw) <= 26 else meta_raw[:25] + "…"
         if self._last_meta != meta_trunc:
-            meta_widget.update(f"[#A6ADC8]{meta_trunc}[/]", layout=False)
+            meta_widget.update(f"[dim #A6ADC8]{meta_trunc}[/]", layout=False)
             self._last_meta = meta_trunc
 
         transport.set_state(is_playing=is_playing, has_track=True, shuffle_enabled=self.shuffle_enabled)
