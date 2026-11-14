@@ -150,10 +150,12 @@ class CurtainDrawer(Widget):
         spotify_client: Optional[Any] = None,
         on_connect_account: Optional[Callable[[], None]] = None,
         on_disconnect_account: Optional[Callable[[], None]] = None,
+        on_shuffle_play: Optional[Callable[[Dict[str, Any]], None]] = None,
     ):
         super().__init__()
         self.client: Any = client if client is not None else spotify_client
         self.on_play: Optional[Callable[[Track], None]] = on_play
+        self.on_shuffle_play: Optional[Callable[[Dict[str, Any]], None]] = on_shuffle_play
         self.on_connect_account: Optional[Callable[[], None]] = on_connect_account
         self.on_disconnect_account: Optional[Callable[[], None]] = on_disconnect_account
 
@@ -255,7 +257,7 @@ class CurtainDrawer(Widget):
                 yield Static("  TRACKS (0)", id="track-header")
                 yield OptionList(id="track-list")
         yield Static(
-            "[#FFD166]← / →[/] Switch Column   [#FFD166]↑ / ↓[/] Navigate   [#FFD166]/[/] Search   [#FFD166]Enter[/] Play   [#FFD166]Backspace[/] Back   [#FFD166]Esc[/] Close",
+            "[#FFD166]Enter[/] Play   [#FFD166]S[/] Shuffle   [#FFD166]/[/] Search   [#FFD166]Backspace[/] Back   [#FFD166]← / →[/] Columns   [#FFD166]Esc[/] Close",
             id="drawer-footer",
         )
 
@@ -357,6 +359,62 @@ class CurtainDrawer(Widget):
                     return
         except Exception:
             pass
+
+        if event.key in ("s", "S"):
+            # If search input is open, do not hijack typing
+            try:
+                s_input = self.query_one("#search-input", Input)
+                if s_input.has_class("-visible"):
+                    return
+            except Exception:
+                pass
+
+            target = None
+            try:
+                tlist = self.query_one("#track-list", OptionList)
+                clist = self.query_one("#category-list", OptionList)
+                if tlist.has_focus or (not clist.has_focus and tlist.highlighted is not None):
+                    if self._nav_stack:
+                        last_nav = self._nav_stack[-1]
+                        target = {
+                            "id": last_nav.get("id"),
+                            "title": last_nav.get("title", "Playlist"),
+                            "type": last_nav.get("type", "playlist"),
+                        }
+                    elif self._current_items and tlist.highlighted is not None and 0 <= tlist.highlighted < len(self._current_items):
+                        item = self._current_items[tlist.highlighted]
+                        if isinstance(item, dict) and ("id" in item or "playlistId" in item):
+                            target = {
+                                "id": item.get("id") or item.get("playlistId"),
+                                "title": item.get("title", "Playlist"),
+                                "type": "playlist",
+                            }
+            except Exception:
+                pass
+
+            if not target:
+                try:
+                    clist = self.query_one("#category-list", OptionList)
+                    highlighted_idx = clist.highlighted
+                    if highlighted_idx is None:
+                        highlighted_idx = self._current_cat_idx
+                    if highlighted_idx is not None and 0 <= highlighted_idx < len(self.categories):
+                        cat = self.categories[highlighted_idx]
+                        cat_id = cat["id"]
+                        if cat_id in ("liked", "trending", "arcane", "lofi", "synthwave") or cat.get("query"):
+                            target = {
+                                "id": cat_id,
+                                "title": cat["name"],
+                                "type": "category",
+                                "query": cat.get("query"),
+                            }
+                except Exception:
+                    pass
+
+            if target and self.on_shuffle_play:
+                self.on_shuffle_play(target)
+                event.stop()
+                return
 
         if event.key == "slash":
             self.open_search()

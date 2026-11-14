@@ -595,4 +595,102 @@ def test_drawer_drill_down_select_track_and_left_key_back():
     asyncio.run(_test())
 
 
+def test_drawer_shuffle_shortcut_category_trigger():
+    """Verify pressing 's' on a category triggers on_shuffle_play callback."""
+    from textual import events
+
+    mock_client = MagicMock()
+    mock_client.is_authenticated.return_value = True
+    drawer = CurtainDrawer(client=mock_client)
+
+    shuffled_payloads = []
+    drawer.on_shuffle_play = lambda payload: shuffled_payloads.append(payload)
+
+    class TestApp(App):
+        def compose(self) -> ComposeResult:
+            yield drawer
+
+    async def _test():
+        app = TestApp()
+        async with app.run_test():
+            clist = drawer.query_one("#category-list", OptionList)
+            liked_idx = next(i for i, c in enumerate(drawer.categories) if c["id"] == "liked")
+            clist.highlighted = liked_idx
+
+            drawer.on_key(events.Key("s", "s"))
+            assert len(shuffled_payloads) == 1
+            assert shuffled_payloads[0]["id"] == "liked"
+            assert shuffled_payloads[0]["type"] == "category"
+
+    asyncio.run(_test())
+
+
+def test_drawer_shuffle_shortcut_playlist_trigger():
+    """Verify pressing 's' on a user playlist in track list triggers on_shuffle_play."""
+    from textual import events
+
+    mock_client = MagicMock()
+    mock_client.is_authenticated.return_value = True
+    mock_client.get_library_playlists.return_value = [
+        {"id": "PL_fav", "title": "My Favorite Tracks", "count": "50", "thumbnail_url": ""}
+    ]
+    drawer = CurtainDrawer(client=mock_client)
+
+    shuffled_payloads = []
+    drawer.on_shuffle_play = lambda payload: shuffled_payloads.append(payload)
+
+    class TestApp(App):
+        def compose(self) -> ComposeResult:
+            yield drawer
+
+    async def _test():
+        app = TestApp()
+        async with app.run_test():
+            # Open library playlists
+            playlists_idx = next(i for i, c in enumerate(drawer.categories) if c["id"] == "library_playlists")
+            drawer.select_category(playlists_idx)
+            await asyncio.sleep(0.1)
+
+            tlist = drawer.query_one("#track-list", OptionList)
+            tlist.focus()
+            tlist.highlighted = 0
+            await asyncio.sleep(0.05)
+
+            drawer.on_key(events.Key("s", "s"))
+            assert len(shuffled_payloads) == 1
+            assert shuffled_payloads[0]["id"] == "PL_fav"
+            assert shuffled_payloads[0]["title"] == "My Favorite Tracks"
+            assert shuffled_payloads[0]["type"] == "playlist"
+
+    asyncio.run(_test())
+
+
+def test_drawer_shuffle_shortcut_ignored_in_search():
+    """Verify pressing 's' when search input is focused is ignored by drawer shuffle."""
+    from textual import events
+
+    mock_client = MagicMock()
+    drawer = CurtainDrawer(client=mock_client)
+
+    shuffled_payloads = []
+    drawer.on_shuffle_play = lambda payload: shuffled_payloads.append(payload)
+
+    class TestApp(App):
+        def compose(self) -> ComposeResult:
+            yield drawer
+
+    async def _test():
+        app = TestApp()
+        async with app.run_test():
+            drawer.open_search()
+            s_input = drawer.query_one("#search-input", Input)
+            s_input.focus()
+
+            drawer.on_key(events.Key("s", "s"))
+            assert len(shuffled_payloads) == 0
+
+    asyncio.run(_test())
+
+
+
 
