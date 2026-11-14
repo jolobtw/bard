@@ -124,11 +124,12 @@ class BardApp(App):
                     self._last_known_dur = dur
                 if self.stage_widget.playback_data:
                     self.stage_widget.playback_data["is_playing"] = True
-                    self.stage_widget.playback_data["progress_ms"] = int(pos * 1000)
+                    pos_ms = int(pos * 1000)
+                    dur_ms = int(dur * 1000) if dur > 0 else self.stage_widget.playback_data.get("duration_ms", 0)
+                    self.stage_widget.playback_data["progress_ms"] = pos_ms
                     if dur > 0:
-                        self.stage_widget.playback_data["duration_ms"] = int(dur * 1000)
-                    self.stage_widget._current_progress_ms = int(pos * 1000)
-                    self.stage_widget.refresh_stage()
+                        self.stage_widget.playback_data["duration_ms"] = dur_ms
+                    self.stage_widget.update_progress(pos_ms, dur_ms)
             else:
                 # If playback was active and stopped near end of track, auto-advance
                 if (

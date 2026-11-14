@@ -440,7 +440,9 @@ class ZenStage(Widget):
         try:
             art_widget = self.query_one("#art-box", TIImage)
             _, art_h = self.get_art_dimensions()
-            art_widget.styles.height = min(22, max(10, art_h - 2))
+            target_h = min(22, max(10, art_h - 2))
+            if getattr(art_widget.styles.height, "value", None) != target_h:
+                art_widget.styles.height = target_h
         except Exception:
             pass
 
@@ -568,17 +570,21 @@ class ZenStage(Widget):
             self._cached_pil_image = None
         self.refresh_stage()
 
+    def update_progress(self, progress_ms: int, duration_ms: int) -> None:
+        """Update only the seek bar without re-rendering album art or dock layout."""
+        self._current_progress_ms = max(0, progress_ms)
+        if self.is_mounted:
+            try:
+                self.query_one("#progress-bar", SeekBar).set_progress(self._current_progress_ms, duration_ms)
+            except Exception:
+                pass
+
     def tick_progress(self, delta_ms: int = 1000) -> None:
         """Advance progress bar by delta if currently playing."""
         if self.playback_data and self.playback_data.get("is_playing"):
             duration = self.playback_data.get("duration_ms", 0)
             if duration > 0 and self._current_progress_ms < duration:
-                self._current_progress_ms = min(duration, self._current_progress_ms + delta_ms)
-                if self.is_mounted:
-                    try:
-                        self.query_one("#progress-bar", SeekBar).set_progress(self._current_progress_ms, duration)
-                    except Exception:
-                        pass
+                self.update_progress(min(duration, self._current_progress_ms + delta_ms), duration)
 
     def refresh_stage(self) -> None:
         """Re-render stage widgets."""
@@ -614,8 +620,10 @@ class ZenStage(Widget):
         )
 
         if not self.playback_data:
-            art_center.display = False
-            art_widget.image = None
+            if art_center.display:
+                art_center.display = False
+            if art_widget.image is not None:
+                art_widget.image = None
             viz_widget.update("[#2E3244]  ▄    \n▄ █ ▄  \n█ █ █ ▄[/]")
             kicker_widget.update("[#FF7A00]✦ READY TO STREAM[/]")
             theme = load_theme()
@@ -637,12 +645,10 @@ class ZenStage(Widget):
             return
 
         self._apply_art_height()
-        if self._cached_pil_image is not None:
+        if not art_center.display:
             art_center.display = True
+        if art_widget.image is not self._cached_pil_image:
             art_widget.image = self._cached_pil_image
-        else:
-            art_center.display = True
-            art_widget.image = None
 
         title = self.playback_data.get("title", "Unknown")
         artist = self.playback_data.get("artist", "Unknown Artist")
