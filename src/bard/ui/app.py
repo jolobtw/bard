@@ -513,7 +513,7 @@ class BardApp(App):
                 pass
         if self.stage_widget.playback_data:
             self.stage_widget.playback_data["volume"] = clamped
-            self.stage_widget.refresh_stage()
+            self.stage_widget.update_volume(clamped)
 
     def action_toggle_mute(self) -> None:
         """Mute or restore volume."""
@@ -542,9 +542,9 @@ class BardApp(App):
             self.player.seek(offset)
             if self.stage_widget.playback_data:
                 new_ms = max(0, int(position_seconds * 1000))
+                dur_ms = self.stage_widget.playback_data.get("duration_ms", 0)
                 self.stage_widget.playback_data["progress_ms"] = new_ms
-                self.stage_widget._current_progress_ms = new_ms
-                self.stage_widget.refresh_stage()
+                self.stage_widget.update_progress(new_ms, dur_ms)
         except Exception:
             pass
 

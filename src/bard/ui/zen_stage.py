@@ -194,11 +194,11 @@ class TransportBar(Widget):
 
 
 class VolumeBar(Widget):
-    """Right-side clickable volume slider with [MUTE] toggle and device caption."""
+    """Right-side clickable volume slider with clickable speaker mute/unmute icon."""
 
     DEFAULT_CSS = """
     VolumeBar {
-        width: 24;
+        width: 22;
         height: 3;
         background: #181A24;
     }
@@ -215,45 +215,56 @@ class VolumeBar(Widget):
         self.on_mute = on_mute
         self.volume: int = 100
         self.device_name: str = "YouTube Music"
+        self._hover_icon: bool = False
 
-    def set_state(self, volume: int, device_name: str) -> None:
-        self.volume = max(0, min(100, int(volume)))
-        self.device_name = device_name or "YouTube Music"
+    def set_state(self, volume: int, device_name: str = "") -> None:
+        new_vol = max(0, min(100, int(volume)))
+        if new_vol == self.volume and (not device_name or device_name == self.device_name):
+            return
+        self.volume = new_vol
+        if device_name:
+            self.device_name = device_name
         self.refresh()
+
+    def on_mouse_move(self, event: events.MouseMove) -> None:
+        over_icon = event.x < 3
+        if over_icon != self._hover_icon:
+            self._hover_icon = over_icon
+            self.refresh()
+
+    def on_leave(self, event: events.Leave) -> None:
+        if self._hover_icon:
+            self._hover_icon = False
+            self.refresh()
 
     def on_click(self, event: events.Click) -> None:
         event.stop()
-        if event.y == 0 and event.x >= 10:
+        if event.x < 3:
             if self.on_mute:
                 self.on_mute()
             return
-        if event.y == 1 and event.x >= 3:
+        if event.x >= 3:
             bar_x = event.x - 3
-            bar_w = max(1, 20)
+            bar_w = 18
             pct = max(0, min(100, round((bar_x / (bar_w - 1)) * 100)))
             if self.on_volume:
                 self.on_volume(pct)
 
     def render(self) -> Text:
         is_muted = self.volume == 0
-        mute_tag = "[bold #FF7A00][MUTED][/]" if is_muted else "[#6C7086][MUTE][/]"
-        pct_str = f"[bold #FFD166]{self.volume:3d}%[/]"
-        line0 = f"         {mute_tag} {pct_str}"
+        if is_muted:
+            speaker = "[bold #FF7A00]󰖁[/]"
+        elif self._hover_icon:
+            speaker = "[bold #FFD166]󰕾[/]"
+        else:
+            speaker = "[#A6ADC8]󰕾[/]"
 
-        speaker = "[#FF7A00]󰖁[/]" if is_muted else "[#A6ADC8]󰕾[/]"
-        bar_w = 19
+        bar_w = 18
         filled = round((self.volume / 100.0) * (bar_w - 1))
         unfilled = (bar_w - 1) - filled
         slider = render_arcane_bar(filled, unfilled)
         line1 = f" {speaker} {slider}"
-
-        dev = self.device_name or "YouTube Music"
-        if dev == "YouTube Music / Standalone":
-            dev = "YouTube Music"
-        elif len(dev) > 23:
-            dev = dev[:22] + "…"
-        line2 = f"[#6C7086]{dev:>23}[/]"
-        return Text.from_markup(f"{line0}\n{line1}\n{line2}")
+        return Text.from_markup(f"\n{line1}\n")
 
 
 class SeekBar(Widget):
@@ -336,7 +347,7 @@ class ZenStage(Widget):
 
     #player-dock {
         width: 100%;
-        height: auto;
+        height: 10;
         background: #181A24;
         border: round #2E3244;
         padding: 1 2;
@@ -403,11 +414,35 @@ class ZenStage(Widget):
         self._cached_pil_image: Any = None
         self._last_rendered_dims: Optional[Tuple[int, int]] = None
         self.device_name: Optional[str] = None
+        self._last_kicker: str = ""
+        self._last_title: str = ""
+        self._last_meta: str = ""
+        self._hint_initialized: bool = False
 
     def set_shuffle(self, enabled: bool) -> None:
         """Update shuffle toggle state and refresh transport controls."""
         self.shuffle_enabled = enabled
+        if self.is_mounted:
+            try:
+                transport = self.query_one("#transport-controls", TransportBar)
+                is_playing = bool(self.playback_data and self.playback_data.get("is_playing", False))
+                transport.set_state(
+                    is_playing=is_playing,
+                    has_track=bool(self.playback_data),
+                    shuffle_enabled=self.shuffle_enabled,
+                )
+                return
+            except Exception:
+                pass
         self.refresh_stage()
+
+    def update_volume(self, volume: int) -> None:
+        """Update only the volume slider without touching artwork or layout."""
+        if self.is_mounted:
+            try:
+                self.query_one("#volume-control", VolumeBar).set_state(volume=volume)
+            except Exception:
+                pass
 
     def get_art_dimensions(self) -> Tuple[int, int]:
         """Compute responsive album art dimensions based on current widget/screen dimensions."""
@@ -588,45 +623,56 @@ class ZenStage(Widget):
         seek_bar = self.query_one("#progress-bar", SeekBar)
         hint_widget = self.query_one("#controls-hint", Static)
 
-        hint_text = Text.assemble(
-            ("Tab", "bold #FFD166"),
-            (" Explore", "#6C7086"),
-            ("   •   ", "#2E3244"),
-            ("Space", "bold #FFD166"),
-            (" Play/Pause", "#6C7086"),
-            ("   •   ", "#2E3244"),
-            ("S", "bold #FFD166"),
-            (" Shuffle", "#6C7086"),
-            ("   •   ", "#2E3244"),
-            ("+/-", "bold #FFD166"),
-            (" Volume", "#6C7086"),
-            ("   •   ", "#2E3244"),
-            ("Q", "bold #FFD166"),
-            (" Quit", "#6C7086"),
-        )
+        if not self._hint_initialized:
+            hint_widget.update(
+                Text.assemble(
+                    ("Tab", "bold #FFD166"),
+                    (" Explore", "#6C7086"),
+                    ("   •   ", "#2E3244"),
+                    ("Space", "bold #FFD166"),
+                    (" Play/Pause", "#6C7086"),
+                    ("   •   ", "#2E3244"),
+                    ("S", "bold #FFD166"),
+                    (" Shuffle", "#6C7086"),
+                    ("   •   ", "#2E3244"),
+                    ("+/-", "bold #FFD166"),
+                    (" Volume", "#6C7086"),
+                    ("   •   ", "#2E3244"),
+                    ("Q", "bold #FFD166"),
+                    (" Quit", "#6C7086"),
+                ),
+                layout=False,
+            )
+            self._hint_initialized = True
 
         if not self.playback_data:
             if art_center.display:
                 art_center.display = False
             if art_widget.image is not None:
                 art_widget.image = None
-            kicker_widget.update("[#FF7A00]✦ READY TO STREAM[/]")
-            theme = load_theme()
-            palette = theme.get("palette", {})
-            start_color = palette.get("gradient_start", "#FF4500")
-            end_color = palette.get("gradient_end", "#FFD166")
-            title_widget.update(render_rich_gradient("Select Music", start_color, end_color))
-            meta_widget.update(
-                Text.assemble(
-                    ("Press ", "#A6ADC8"),
-                    ("[Tab]", "bold #FFD166"),
-                    (" to explore", "#A6ADC8"),
+            if self._last_kicker != "READY":
+                kicker_widget.update("[#FF7A00]✦ READY TO STREAM[/]", layout=False)
+                self._last_kicker = "READY"
+            if self._last_title != "__EMPTY__":
+                theme = load_theme()
+                palette = theme.get("palette", {})
+                start_color = palette.get("gradient_start", "#FF4500")
+                end_color = palette.get("gradient_end", "#FFD166")
+                title_widget.update(render_rich_gradient("Select Music", start_color, end_color), layout=False)
+                self._last_title = "__EMPTY__"
+            if self._last_meta != "__EMPTY__":
+                meta_widget.update(
+                    Text.assemble(
+                        ("Press ", "#A6ADC8"),
+                        ("[Tab]", "bold #FFD166"),
+                        (" to explore", "#A6ADC8"),
+                    ),
+                    layout=False,
                 )
-            )
+                self._last_meta = "__EMPTY__"
             transport.set_state(is_playing=False, has_track=False, shuffle_enabled=self.shuffle_enabled)
             volume_bar.set_state(volume=100, device_name=self.device_name or "YouTube Music")
             seek_bar.set_progress(0, 0)
-            hint_widget.update(hint_text)
             return
 
         self._apply_art_height()
@@ -643,21 +689,28 @@ class ZenStage(Widget):
         is_playing = self.playback_data.get("is_playing", False)
         device_name = self.playback_data.get("device_name", self.device_name or "YouTube Music")
 
-        if is_playing:
-            kicker_widget.update("[#FF7A00]NOW PLAYING[/]")
-        else:
-            kicker_widget.update("[#6C7086]PAUSED[/]")
+        kicker_key = "PLAYING" if is_playing else "PAUSED"
+        if self._last_kicker != kicker_key:
+            if is_playing:
+                kicker_widget.update("[#FF7A00]NOW PLAYING[/]", layout=False)
+            else:
+                kicker_widget.update("[#6C7086]PAUSED[/]", layout=False)
+            self._last_kicker = kicker_key
 
         title_trunc = title if len(title) <= 34 else title[:33] + "…"
+        if self._last_title != title_trunc:
+            title_widget.update(f"[bold #FFFFFF]{title_trunc}[/]", layout=False)
+            self._last_title = title_trunc
+
         meta_raw = f"{artist} • {album}" if album else artist
         meta_trunc = meta_raw if len(meta_raw) <= 36 else meta_raw[:35] + "…"
-        title_widget.update(f"[bold #FFFFFF]{title_trunc}[/]")
-        meta_widget.update(f"[#A6ADC8]{meta_trunc}[/]")
+        if self._last_meta != meta_trunc:
+            meta_widget.update(f"[#A6ADC8]{meta_trunc}[/]", layout=False)
+            self._last_meta = meta_trunc
 
         transport.set_state(is_playing=is_playing, has_track=True, shuffle_enabled=self.shuffle_enabled)
         volume_bar.set_state(volume=volume, device_name=device_name)
         seek_bar.set_progress(self._current_progress_ms, duration)
-        hint_widget.update(hint_text)
 
     def on_mount(self) -> None:
         self.refresh_stage()

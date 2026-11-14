@@ -210,8 +210,8 @@ def test_zen_stage_clickable_transport_buttons_and_shuffle():
             assert transport.is_playing is True
             assert vol_bar.volume == 80
 
-            # Click mute tag on row 0 and volume slider on row 1
-            await pilot.click("#volume-control", offset=(12, 0))
+            # Click speaker icon on left (x < 3) to mute, and slider bar (x >= 3) to set volume
+            await pilot.click("#volume-control", offset=(1, 1))
             assert "mute" in calls
             await pilot.click("#volume-control", offset=(12, 1))
             assert any(isinstance(c, tuple) and c[0] == "vol" for c in calls)
