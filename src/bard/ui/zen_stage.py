@@ -72,12 +72,13 @@ def _render_play_circle_rows(
     solid_fg = f"{fg_c}\x1b[48;2;{fg[0]};{fg[1]};{fg[2]}m"
     rst = "\x1b[0m"
 
-    glyph = "❚❚" if is_playing else "▶ "
-
     # Row 0: chamfered top (5 full middle, 2 bottom-half corners)
     row0 = f"{fg_on_bg}▄{solid_fg}█████{fg_on_bg}▄{rst}"
-    # Row 1: full 7-wide center with centered 2-cell glyph
-    row1 = f"{solid_fg}  {bg_on_fg}{glyph}{solid_fg}   {rst}"
+    # Row 1: full 7-wide center with centered glyph
+    if is_playing:
+        row1 = f"{solid_fg}  {bg_on_fg}❚ ❚{solid_fg}  {rst}"
+    else:
+        row1 = f"{solid_fg}   {bg_on_fg}▶{solid_fg}   {rst}"
     # Row 2: chamfered bottom
     row2 = f"{fg_on_bg}▀{solid_fg}█████{fg_on_bg}▀{rst}"
     return (row0, row1, row2)
@@ -246,7 +247,11 @@ class VolumeBar(Widget):
         slider = f"[#FF7A00]{'━' * filled}[#FFD166]●[/][#2E3244]{'─' * unfilled}[/]"
         line1 = f" {speaker} {slider}"
 
-        dev = self.device_name[:23]
+        dev = self.device_name or "YouTube Music"
+        if dev == "YouTube Music / Standalone":
+            dev = "YouTube Music"
+        elif len(dev) > 23:
+            dev = dev[:22] + "…"
         line2 = f"[#6C7086]{dev:>23}[/]"
         return Text.from_markup(f"{line0}\n{line1}\n{line2}")
 
@@ -611,7 +616,7 @@ class ZenStage(Widget):
         if not self.playback_data:
             art_center.display = False
             art_widget.image = None
-            viz_widget.update("[#2E3244]▂ ▄ ▆\n▄ ▆ █\n█ ▆ ▄[/]")
+            viz_widget.update("[#2E3244]  ▄    \n▄ █ ▄  \n█ █ █ ▄[/]")
             kicker_widget.update("[#FF7A00]✦ READY TO STREAM[/]")
             theme = load_theme()
             palette = theme.get("palette", {})
@@ -622,9 +627,7 @@ class ZenStage(Widget):
                 Text.assemble(
                     ("Press ", "#A6ADC8"),
                     ("[Tab]", "bold #FFD166"),
-                    (" to browse or ", "#A6ADC8"),
-                    ("[Space]", "bold #FFD166"),
-                    (" to resume", "#A6ADC8"),
+                    (" to explore", "#A6ADC8"),
                 )
             )
             transport.set_state(is_playing=False, has_track=False, shuffle_enabled=self.shuffle_enabled)
@@ -650,10 +653,10 @@ class ZenStage(Widget):
         device_name = self.playback_data.get("device_name", self.device_name or "YouTube Music")
 
         if is_playing:
-            viz_widget.update("[#FF7A00]▁ ▄ ▇\n▃ █ ▅\n█ ▆ ▂[/]")
+            viz_widget.update("[#FF7A00]  █   ▄\n▄ █ █ █\n█ █ █ █[/]")
             kicker_widget.update("[#FF7A00]NOW PLAYING[/]")
         else:
-            viz_widget.update("[#363B54]▂ ▄ ▆\n▂ ▄ ▆\n▂ ▄ ▆[/]")
+            viz_widget.update("[#363B54]  ▄    \n▄ █ ▄  \n█ █ █ ▄[/]")
             kicker_widget.update("[#6C7086]PAUSED[/]")
 
         title_trunc = title if len(title) <= 28 else title[:27] + "…"
