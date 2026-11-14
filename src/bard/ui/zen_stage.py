@@ -9,10 +9,9 @@ from textual.app import ComposeResult
 from textual.containers import Center, Horizontal, Vertical
 from textual.widget import Widget
 from textual.widgets import Static
-from textual_image.widget import Image as TIImage
 
 from bard.arcane_theme import DEFAULT_THEME, hex_to_rgb, interpolate_rgb, load_theme, render_rich_gradient
-from bard.art import fetch_pil_image, render_album_art
+from bard.art import render_album_art
 
 _DOCK_BG_ANSI = "\x1b[48;2;24;26;36m"  # #181A24
 _PALETTE = DEFAULT_THEME["palette"]
@@ -342,7 +341,7 @@ class ZenStage(Widget):
 
     #art-box {
         width: auto;
-        height: 18;
+        height: auto;
     }
 
     #player-dock {
@@ -411,12 +410,12 @@ class ZenStage(Widget):
         self._current_progress_ms: int = 0
         self._last_art_url: str = ""
         self._cached_art_ansi: str = ""
-        self._cached_pil_image: Any = None
         self._last_rendered_dims: Optional[Tuple[int, int]] = None
         self.device_name: Optional[str] = None
         self._last_kicker: str = ""
         self._last_title: str = ""
         self._last_meta: str = ""
+        self._last_art_drawn: str = ""
         self._hint_initialized: bool = False
 
     def set_shuffle(self, enabled: bool) -> None:
@@ -458,27 +457,21 @@ class ZenStage(Widget):
             return (58, 25)
         return (46, 20)
 
-    def _apply_art_height(self) -> None:
-        if not self.is_mounted:
-            return
-        try:
-            art_widget = self.query_one("#art-box", TIImage)
-            _, art_h = self.get_art_dimensions()
-            target_h = min(22, max(10, art_h - 2))
-            if getattr(art_widget.styles.height, "value", None) != target_h:
-                art_widget.styles.height = target_h
-        except Exception:
-            pass
-
     def on_resize(self, event: Any = None) -> None:
         """Handle resize to adapt album art dimensions dynamically."""
-        self._apply_art_height()
         if self.playback_data:
             art_w, art_h = self.get_art_dimensions()
             if self._last_rendered_dims != (art_w, art_h):
                 art_url = self.playback_data.get("album_art_url", "")
                 self._last_rendered_dims = (art_w, art_h)
                 self._cached_art_ansi = render_album_art(art_url, width=art_w, height=art_h)
+                if self.is_mounted:
+                    try:
+                        art_widget = self.query_one("#art-box", Static)
+                        art_widget.update(Text.from_ansi(self._cached_art_ansi))
+                        self._last_art_drawn = self._cached_art_ansi
+                    except Exception:
+                        pass
 
     def set_device_name(self, name: Optional[str]) -> None:
         """Update active output device name."""
@@ -505,7 +498,7 @@ class ZenStage(Widget):
         with Center():
             with Vertical(id="stage-container"):
                 with Center(id="art-center"):
-                    yield TIImage(id="art-box")
+                    yield Static(id="art-box")
                 with Vertical(id="player-dock"):
                     with Horizontal(id="dock-top-row"):
                         with Vertical(id="dock-meta"):
@@ -586,10 +579,9 @@ class ZenStage(Widget):
                 self._last_art_url = art_url
                 self._last_rendered_dims = (art_w, art_h)
                 self._cached_art_ansi = render_album_art(art_url, width=art_w, height=art_h)
-                self._cached_pil_image = fetch_pil_image(art_url) if art_url else None
         else:
             self._last_art_url = ""
-            self._cached_pil_image = None
+            self._cached_art_ansi = ""
         self.refresh_stage()
 
     def update_progress(self, progress_ms: int, duration_ms: int) -> None:
@@ -614,7 +606,7 @@ class ZenStage(Widget):
             return
 
         art_center = self.query_one("#art-center")
-        art_widget = self.query_one("#art-box", TIImage)
+        art_widget = self.query_one("#art-box", Static)
         kicker_widget = self.query_one("#track-kicker", Static)
         title_widget = self.query_one("#track-title", Static)
         meta_widget = self.query_one("#track-meta", Static)
@@ -648,8 +640,9 @@ class ZenStage(Widget):
         if not self.playback_data:
             if art_center.display:
                 art_center.display = False
-            if art_widget.image is not None:
-                art_widget.image = None
+            if self._last_art_drawn:
+                art_widget.update("")
+                self._last_art_drawn = ""
             if self._last_kicker != "READY":
                 kicker_widget.update("[#FF7A00]✦ READY TO STREAM[/]", layout=False)
                 self._last_kicker = "READY"
@@ -675,11 +668,11 @@ class ZenStage(Widget):
             seek_bar.set_progress(0, 0)
             return
 
-        self._apply_art_height()
         if not art_center.display:
             art_center.display = True
-        if art_widget.image is not self._cached_pil_image:
-            art_widget.image = self._cached_pil_image
+        if self._last_art_drawn != self._cached_art_ansi:
+            art_widget.update(Text.from_ansi(self._cached_art_ansi))
+            self._last_art_drawn = self._cached_art_ansi
 
         title = self.playback_data.get("title", "Unknown")
         artist = self.playback_data.get("artist", "Unknown Artist")

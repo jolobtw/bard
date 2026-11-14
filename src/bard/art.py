@@ -29,59 +29,67 @@ def upgrade_thumbnail_url(url: str, target_size: int = 544) -> str:
     return url
 
 
-# 8 canonical 2x2 quadrant bitmasks (TL=8, TR=4, BL=2, BR=1)
-_QUADRANT_MASKS: List[Tuple[int, str]] = [
-    (0b1100, "\u2580"),  # ▀ upper half
-    (0b1010, "\u258c"),  # ▌ left half
-    (0b1000, "\u2598"),  # ▘ upper left
-    (0b0100, "\u259d"),  # ▝ upper right
-    (0b0010, "\u2596"),  # ▖ lower left
-    (0b0001, "\u2597"),  # ▗ lower right
-    (0b1001, "\u259a"),  # ▚ diagonal TL+BR
-    (0b0110, "\u259e"),  # ▞ diagonal TR+BL
+def _sextant_char(mask: int) -> str:
+    """Map a 6-bit mask (bits 0..5 = TL, TR, ML, MR, BL, BR) to a Unicode 2x3 sextant block."""
+    if mask == 21:
+        return "\u258c"  # ▌ left half block
+    if mask == 42:
+        return "\u2590"  # ▐ right half block
+    offset = mask - 1 - (1 if mask > 21 else 0) - (1 if mask > 42 else 0)
+    return chr(0x1FB00 + offset)
+
+
+# 31 canonical 2x3 sextant masks (complements 32..62 are identical by swapping fg/bg)
+_SEXTANT_MASKS: List[Tuple[str, Tuple[int, ...], Tuple[int, ...]]] = [
+    (
+        _sextant_char(m),
+        tuple(i for i in range(6) if m & (1 << i)),
+        tuple(i for i in range(6) if not (m & (1 << i))),
+    )
+    for m in range(1, 32)
 ]
 
 
-def _best_quadrant_cell(
-    p00: Tuple[int, int, int],
-    p10: Tuple[int, int, int],
-    p01: Tuple[int, int, int],
-    p11: Tuple[int, int, int],
+def _best_sextant_cell(
+    pts: Tuple[Tuple[int, int, int], ...],
 ) -> Tuple[str, Tuple[int, int, int], Tuple[int, int, int]]:
-    """Find the optimal 2x2 quadrant block character and (fg, bg) RGB pair."""
-    if p00 == p10 == p01 == p11:
-        return ("\u2588", p00, p00)
+    """Find the optimal 2x3 sextant block character and (fg, bg) RGB pair."""
+    p0 = pts[0]
+    if pts[1] == p0 and pts[2] == p0 and pts[3] == p0 and pts[4] == p0 and pts[5] == p0:
+        return ("\u2588", p0, p0)
 
-    pts = (p00, p10, p01, p11)
-    best_err = float("inf")
+    best_err = 1 << 60
     best_char = "\u2580"
-    best_fg = p00
-    best_bg = p01
+    best_fg = p0
+    best_bg = pts[5]
 
-    for mask, char in _QUADRANT_MASKS:
-        fg_r = fg_g = fg_b = fg_n = 0
-        bg_r = bg_g = bg_b = bg_n = 0
-        for idx, (r, g, b) in enumerate(pts):
-            if mask & (8 >> idx):
-                fg_r += r
-                fg_g += g
-                fg_b += b
-                fg_n += 1
-            else:
-                bg_r += r
-                bg_g += g
-                bg_b += b
-                bg_n += 1
+    for char, fg_idx, bg_idx in _SEXTANT_MASKS:
+        fg_n = len(fg_idx)
+        bg_n = 6 - fg_n
+        fg_r = fg_g = fg_b = 0
+        for i in fg_idx:
+            r, g, b = pts[i]
+            fg_r += r
+            fg_g += g
+            fg_b += b
+        bg_r = bg_g = bg_b = 0
+        for i in bg_idx:
+            r, g, b = pts[i]
+            bg_r += r
+            bg_g += g
+            bg_b += b
 
         fr, fg_c, fb = fg_r // fg_n, fg_g // fg_n, fg_b // fg_n
         br, bg_c, bb = bg_r // bg_n, bg_g // bg_n, bg_b // bg_n
 
         err = 0
-        for idx, (r, g, b) in enumerate(pts):
-            if mask & (8 >> idx):
-                dr, dg, db = r - fr, g - fg_c, b - fb
-            else:
-                dr, dg, db = r - br, g - bg_c, b - bb
+        for i in fg_idx:
+            r, g, b = pts[i]
+            dr, dg, db = r - fr, g - fg_c, b - fb
+            err += dr * dr + dg * dg + db * db
+        for i in bg_idx:
+            r, g, b = pts[i]
+            dr, dg, db = r - br, g - bg_c, b - bb
             err += dr * dr + dg * dg + db * db
 
         if err < best_err:
@@ -89,6 +97,8 @@ def _best_quadrant_cell(
             best_char = char
             best_fg = (fr, fg_c, fb)
             best_bg = (br, bg_c, bb)
+            if err == 0:
+                break
 
     return (best_char, best_fg, best_bg)
 
@@ -121,34 +131,37 @@ def _image_to_halfblock_ansi(img: Image.Image, width: int, height: int) -> str:
 def image_to_ansi(img: Image.Image, width: int = 46, height: int = 20) -> str:
     """
     Convert a PIL image into a high-resolution 24-bit TrueColor ANSI mosaic.
-    Uses 2x2 Unicode quadrant blocks (4 sub-pixels per character cell) for
-    4x pixel density when upscaling/downscaling full-resolution artwork, and
-    preserves exact 1x2 half-block mapping when source matches (width, height*2).
+    Uses 2x3 Unicode sextant blocks (6 sub-pixels per character cell) for
+    6x pixel density when rendering artwork, and preserves exact 1x2 half-block
+    mapping when source matches (width, height*2).
     """
     img = img.convert("RGB")
     if img.size == (width, height * 2):
         return _image_to_halfblock_ansi(img, width=width, height=height)
 
     sub_w = width * 2
-    sub_h = height * 2
+    sub_h = height * 3
     resized = img.resize((sub_w, sub_h), Image.Resampling.LANCZOS)
     resized = ImageEnhance.Sharpness(resized).enhance(1.15)
     pixels = resized.load()
 
     lines = []
     for cy in range(height):
-        y0 = cy * 2
+        y0 = cy * 3
         y1 = y0 + 1
+        y2 = y0 + 2
         line_chars = []
         for cx in range(width):
             x0 = cx * 2
             x1 = x0 + 1
-            char, (fr, fg, fb), (br, bg, bb) = _best_quadrant_cell(
+            char, (fr, fg, fb), (br, bg, bb) = _best_sextant_cell((
                 pixels[x0, y0],
                 pixels[x1, y0],
                 pixels[x0, y1],
                 pixels[x1, y1],
-            )
+                pixels[x0, y2],
+                pixels[x1, y2],
+            ))
             line_chars.append(f"\x1b[38;2;{fr};{fg};{fb}m\x1b[48;2;{br};{bg};{bb}m{char}")
         line_chars.append("\x1b[0m")
         lines.append("".join(line_chars))

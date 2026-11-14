@@ -27,7 +27,6 @@ def test_render_arcane_bar_gradient():
 
 def test_zen_stage_empty_state_rendering():
     from textual.app import App, ComposeResult
-    from textual_image.widget import Image as TIImage
     from bard.ui.zen_stage import ZenStage
     from textual.widgets import Static
     import asyncio
@@ -45,8 +44,8 @@ def test_zen_stage_empty_state_rendering():
             assert "Select Music" in str(title.render())
             art_center = stage.query_one("#art-center")
             assert art_center.display is False
-            art = stage.query_one("#art-box", TIImage)
-            assert art.image is None
+            art = stage.query_one("#art-box", Static)
+            assert str(art.render()) == ""
 
             # Verify transition to playing state displays art and title
             stage.update_playback({
@@ -209,6 +208,7 @@ def test_zen_stage_clickable_transport_buttons_and_shuffle():
             })
             assert transport.is_playing is True
             assert vol_bar.volume == 80
+            await pilot.pause()
 
             # Click speaker icon on left (x < 3) to mute, and slider bar (x >= 3) to set volume
             await pilot.click("#volume-control", offset=(1, 1))

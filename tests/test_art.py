@@ -124,8 +124,21 @@ def test_image_to_ansi_uses_quadrant_blocks_for_higher_resolution():
     ansi_output = image_to_ansi(img, width=4, height=4)
     lines = ansi_output.split("\n")
     assert len(lines) == 4
-    # Quadrant renderer can represent vertical splits using ▌ (\u258c) or other quadrants
+    # Quadrant/sextant renderer can represent vertical splits using ▌ (\u258c)
     assert any(ch in ansi_output for ch in ("\u258c", "\u2598", "\u259d", "\u2596", "\u2597", "\u259a", "\u259e"))
+
+
+def test_image_to_ansi_uses_sextant_blocks():
+    # 4x6 image with top 2 rows red and bottom 4 rows blue -> exact 2x3 sextant 🬎 (U+1FB0E, top 2/3)
+    img = Image.new("RGB", (4, 6))
+    for y in range(6):
+        for x in range(4):
+            img.putpixel((x, y), (255, 0, 0) if y < 2 else (0, 0, 255))
+
+    ansi_output = image_to_ansi(img, width=2, height=2)
+    lines = ansi_output.split("\n")
+    assert len(lines) == 2
+    assert "\U0001fb0e" in lines[0]
 
 
 
