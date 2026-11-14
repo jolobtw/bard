@@ -528,7 +528,49 @@ def test_client_init_oauth_failure_falls_back_to_anonymous(tmp_path):
         assert client.is_authenticated() is False
 
 
-def test_get_shuffled_playlist_tracks_success():
+def test_get_shuffled_playlist_tracks_full_playlist():
+    all_tracks = [
+        Track(
+            id=f"vid_{i}",
+            title=f"Song {i}",
+            artist=f"Artist {i}",
+            album="Album",
+            duration_seconds=180,
+            thumbnail_url="",
+        )
+        for i in range(120)
+    ]
+    with patch("bard.ytmusic_client.YTMusic"):
+        client = YTMusicClient()
+        with patch.object(client, "get_playlist_tracks", return_value=all_tracks) as mock_get_pl:
+            tracks = client.get_shuffled_playlist_tracks("PL123")
+            mock_get_pl.assert_called_once_with("PL123", limit=None)
+            assert len(tracks) == 120
+            assert {t.id for t in tracks} == {t.id for t in all_tracks}
+
+
+def test_get_shuffled_playlist_tracks_liked_songs():
+    liked_tracks = [
+        Track(
+            id=f"liked_{i}",
+            title=f"Liked {i}",
+            artist="Artist",
+            album="Liked Songs",
+            duration_seconds=200,
+            thumbnail_url="",
+        )
+        for i in range(75)
+    ]
+    with patch("bard.ytmusic_client.YTMusic"):
+        client = YTMusicClient()
+        with patch.object(client, "get_liked_songs", return_value=liked_tracks) as mock_liked:
+            tracks = client.get_shuffled_playlist_tracks("liked")
+            mock_liked.assert_called_once_with(limit=None)
+            assert len(tracks) == 75
+            assert {t.id for t in tracks} == {t.id for t in liked_tracks}
+
+
+def test_get_shuffled_playlist_tracks_watch_fallback():
     fake_watch_resp = {
         "tracks": [
             {
@@ -549,37 +591,14 @@ def test_get_shuffled_playlist_tracks_success():
             },
         ]
     }
-    with patch("bard.ytmusic_client.YTMusic") as MockYTMusic:
-        client = YTMusicClient()
-        with patch.object(client._ytm, "get_watch_playlist", return_value=fake_watch_resp) as mock_watch:
-            tracks = client.get_shuffled_playlist_tracks("liked", limit=50)
-            assert len(tracks) == 2
-            assert tracks[0].id == "vid_shuf_1"
-            assert tracks[0].title == "Shuffled Song 1"
-            assert tracks[0].artist == "Artist 1"
-            assert tracks[0].album == "Album 1"
-            assert tracks[0].duration_seconds == 210
-            assert tracks[0].thumbnail_url == "http://example.com/art1.jpg"
-            assert tracks[1].id == "vid_shuf_2"
-            mock_watch.assert_called_once_with(playlistId="LM", shuffle=True, limit=50)
-
-
-def test_get_shuffled_playlist_tracks_fallback_on_error():
-    fallback_track = Track(
-        id="fb_1",
-        title="Fallback Track",
-        artist="Artist",
-        album="Album",
-        duration_seconds=180,
-        thumbnail_url="",
-    )
     with patch("bard.ytmusic_client.YTMusic"):
         client = YTMusicClient()
-        with patch.object(client._ytm, "get_watch_playlist", side_effect=Exception("API Error")):
-            with patch.object(client, "get_playlist_tracks", return_value=[fallback_track]):
-                tracks = client.get_shuffled_playlist_tracks("PL123", limit=50)
-                assert len(tracks) == 1
-                assert tracks[0].id == "fb_1"
+        with patch.object(client, "get_liked_songs", return_value=[]):
+            with patch.object(client._ytm, "get_watch_playlist", return_value=fake_watch_resp) as mock_watch:
+                tracks = client.get_shuffled_playlist_tracks("liked", limit=50)
+                assert len(tracks) == 2
+                assert {t.id for t in tracks} == {"vid_shuf_1", "vid_shuf_2"}
+                mock_watch.assert_called_once_with(playlistId="LM", shuffle=True, limit=50)
 
 
 def test_get_shuffled_playlist_tracks_empty_id():

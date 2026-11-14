@@ -363,7 +363,7 @@ class YTMusicClient:
             logger.debug("TV endpoint request failed for %s: %s", endpoint, exc)
         return {}
 
-    def _fetch_tv_liked_songs(self, limit: int = 50) -> List[Track]:
+    def _fetch_tv_liked_songs(self, limit: Optional[int] = None) -> List[Track]:
         d = self._post_tv_endpoint("browse", {"browseId": "FEmusic_liked_videos"})
         tabs = d.get("contents", {}).get("tvBrowseRenderer", {}).get("content", {}).get("tvSecondaryNavRenderer", {}).get("sections", [{}])[0].get("tvSecondaryNavSectionRenderer", {}).get("tabs", [])
         tracks: List[Track] = []
@@ -374,7 +374,7 @@ class YTMusicClient:
                 t_obj = _parse_tile_track(tr, default_album="Liked Songs")
                 if t_obj:
                     tracks.append(t_obj)
-                    if len(tracks) >= limit:
+                    if limit is not None and len(tracks) >= limit:
                         return tracks
         return tracks
 
@@ -425,14 +425,14 @@ class YTMusicClient:
                 tracks.append(t_obj)
         return tracks
 
-    def get_playlist_tracks(self, playlist_id: str) -> List[Track]:
+    def get_playlist_tracks(self, playlist_id: str, limit: Optional[int] = None) -> List[Track]:
         """Retrieve tracks from a YouTube Music playlist."""
         if not playlist_id:
             return []
 
         raw_tracks = []
         try:
-            playlist_data = self._ytm.get_playlist(playlist_id)
+            playlist_data = self._ytm.get_playlist(playlist_id, limit=limit)
             if isinstance(playlist_data, dict):
                 raw_tracks = playlist_data.get("tracks", [])
         except Exception as exc:
@@ -441,7 +441,7 @@ class YTMusicClient:
         if not raw_tracks and self.is_authenticated():
             tv_tracks = self._fetch_tv_playlist_tracks(playlist_id)
             if tv_tracks:
-                return tv_tracks
+                return tv_tracks[:limit] if limit is not None else tv_tracks
 
         if not isinstance(raw_tracks, list):
             return []
@@ -451,18 +451,37 @@ class YTMusicClient:
             track = self._normalize_track(item)
             if track is not None:
                 tracks.append(track)
+                if limit is not None and len(tracks) >= limit:
+                    break
 
         return tracks
 
-    def get_shuffled_playlist_tracks(self, playlist_id: str, limit: int = 50) -> List[Track]:
-        """Retrieve shuffled tracks from a YouTube Music playlist or Liked Songs using the watch endpoint."""
+    def get_shuffled_playlist_tracks(self, playlist_id: str, limit: Optional[int] = None) -> List[Track]:
+        """Retrieve and uniformly shuffle all tracks from a YouTube Music playlist or Liked Songs."""
         if not playlist_id:
             return []
 
         pid = "LM" if playlist_id in ("liked", "LM") else playlist_id
+
+        # Fetch the full playlist first so every track has an equal chance of being shuffled.
+        # YouTube's watch-playlist shuffle endpoint only returns a capped/biased subset.
+        try:
+            if pid == "LM":
+                full_tracks = self.get_liked_songs(limit=limit)
+            else:
+                full_tracks = self.get_playlist_tracks(pid, limit=limit)
+            if full_tracks:
+                shuffled = list(full_tracks)
+                random.shuffle(shuffled)
+                return shuffled[:limit] if limit is not None else shuffled
+        except Exception as exc:
+            logger.debug("Full playlist fetch failed for %s: %s; trying watch endpoint", pid, exc)
+
+        # Fallback to watch endpoint (e.g. radio/auto-mix IDs unsupported by get_playlist)
+        watch_limit = limit if limit is not None else 50
         raw_tracks = []
         try:
-            res = self._ytm.get_watch_playlist(playlistId=pid, shuffle=True, limit=limit)
+            res = self._ytm.get_watch_playlist(playlistId=pid, shuffle=True, limit=watch_limit)
             if isinstance(res, dict):
                 raw_tracks = res.get("tracks", [])
         except Exception as exc:
@@ -474,26 +493,12 @@ class YTMusicClient:
                 track = self._normalize_track(item)
                 if track is not None:
                     tracks.append(track)
-                    if limit and len(tracks) >= limit:
+                    if limit is not None and len(tracks) >= limit:
                         break
 
         if tracks:
-            return tracks
-
-        # Fallback to standard playlist fetching + client-side shuffle
-        try:
-            if pid == "LM":
-                fallback = self.get_liked_songs(limit=limit)
-            else:
-                fallback = self.get_playlist_tracks(pid)
-            if fallback:
-                shuffled = list(fallback)
-                random.shuffle(shuffled)
-                return shuffled[:limit] if limit else shuffled
-        except Exception as exc:
-            logger.debug("Fallback shuffle failed for %s: %s", pid, exc)
-
-        return []
+            random.shuffle(tracks)
+        return tracks
 
     def get_trending(self, country: str = "US") -> List[Track]:
         """Fetch trending tracks/charts for a given country."""
@@ -627,7 +632,7 @@ class YTMusicClient:
 
         return None
 
-    def get_liked_songs(self, limit: int = 50) -> List[Track]:
+    def get_liked_songs(self, limit: Optional[int] = None) -> List[Track]:
         """Retrieve user's liked songs from YouTube Music."""
         raw_tracks = []
         try:
@@ -654,7 +659,7 @@ class YTMusicClient:
             track = self._normalize_track(item)
             if track is not None:
                 tracks.append(track)
-                if len(tracks) >= limit:
+                if limit is not None and len(tracks) >= limit:
                     break
         return tracks
 
