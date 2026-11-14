@@ -18,6 +18,7 @@ def test_render_flame_progress():
 
 def test_zen_stage_empty_state_rendering():
     from textual.app import App, ComposeResult
+    from textual_image.widget import Image as TIImage
     from bard.ui.zen_stage import ZenStage
     from textual.widgets import Static
     import asyncio
@@ -35,8 +36,8 @@ def test_zen_stage_empty_state_rendering():
             assert "Select Music" in str(title.render())
             art_center = stage.query_one("#art-center")
             assert art_center.display is False
-            art = stage.query_one("#art-box", Static)
-            assert str(art.render()) == ""
+            art = stage.query_one("#art-box", TIImage)
+            assert art.image is None
 
             # Verify transition to playing state displays art and title
             stage.update_playback({
@@ -149,8 +150,7 @@ def test_zen_stage_large_terminal_art_sizing():
 
 def test_zen_stage_clickable_transport_buttons_and_shuffle():
     from textual.app import App, ComposeResult
-    from textual.widgets import Button
-    from bard.ui.zen_stage import ZenStage
+    from bard.ui.zen_stage import SeekBar, TransportBar, VolumeBar, ZenStage
     import asyncio
 
     calls = []
@@ -162,40 +162,54 @@ def test_zen_stage_clickable_transport_buttons_and_shuffle():
                 on_play_pause=lambda: calls.append("play_pause"),
                 on_next=lambda: calls.append("next"),
                 on_shuffle=lambda: calls.append("shuffle"),
+                on_seek=lambda sec: calls.append(("seek", round(sec, 1))),
+                on_volume=lambda vol: calls.append(("vol", vol)),
+                on_mute=lambda: calls.append("mute"),
             )
 
     async def _test():
         app = TestApp()
         async with app.run_test(size=(100, 40)) as pilot:
             stage = app.query_one(ZenStage)
-            shuffle_btn = stage.query_one("#btn-shuffle", Button)
-            prev_btn = stage.query_one("#btn-prev", Button)
-            play_btn = stage.query_one("#btn-play", Button)
-            next_btn = stage.query_one("#btn-next", Button)
+            transport = stage.query_one("#transport-controls", TransportBar)
+            vol_bar = stage.query_one("#volume-control", VolumeBar)
+            seek_bar = stage.query_one("#progress-bar", SeekBar)
 
-            assert "▶" in str(play_btn.label)
-            assert not shuffle_btn.has_class("-active")
+            assert transport.is_playing is False
+            assert transport.shuffle_enabled is False
 
-            await pilot.click("#btn-shuffle")
-            await pilot.click("#btn-prev")
-            await pilot.click("#btn-play")
-            await pilot.click("#btn-next")
-            assert calls == ["shuffle", "prev", "play_pause", "next"]
+            # Click each hit-zone inside TransportBar
+            await pilot.click("#transport-controls", offset=(1, 1))   # Prev
+            await pilot.click("#transport-controls", offset=(8, 1))   # Play circle
+            await pilot.click("#transport-controls", offset=(14, 1))  # Next
+            await pilot.click("#transport-controls", offset=(20, 1))  # Shuffle
+            assert calls[:4] == ["prev", "play_pause", "next", "shuffle"]
 
             stage.set_shuffle(True)
-            assert shuffle_btn.has_class("-active")
+            assert transport.shuffle_enabled is True
 
             stage.update_playback({
                 "title": "Test Song",
                 "artist": "Test Artist",
                 "album": "Test Album",
-                "duration_ms": 120000,
+                "duration_ms": 100000,
                 "progress_ms": 10000,
                 "is_playing": True,
                 "album_art_url": "",
+                "volume": 80,
             })
-            assert "❚❚" in str(play_btn.label)
-            assert play_btn.has_class("-playing")
+            assert transport.is_playing is True
+            assert vol_bar.volume == 80
+
+            # Click mute tag on row 0 and volume slider on row 1
+            await pilot.click("#volume-control", offset=(12, 0))
+            assert "mute" in calls
+            await pilot.click("#volume-control", offset=(12, 1))
+            assert any(isinstance(c, tuple) and c[0] == "vol" for c in calls)
+
+            # Click seek bar on row 0
+            await pilot.click("#progress-bar", offset=(seek_bar.size.width // 2, 0))
+            assert any(isinstance(c, tuple) and c[0] == "seek" for c in calls)
 
     asyncio.run(_test())
 

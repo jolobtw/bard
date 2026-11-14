@@ -17,6 +17,7 @@ except Exception:
     pass
 
 _ART_CACHE: Dict[Tuple[str, int, int], str] = {}
+_PIL_CACHE: Dict[str, Image.Image] = {}
 
 
 def upgrade_thumbnail_url(url: str, target_size: int = 544) -> str:
@@ -238,6 +239,25 @@ def _safe_fetch_image_bytes(url: str, timeout: int = 5) -> Optional[bytes]:
 def fetch_image(url: str, timeout: int = 5) -> Optional[bytes]:
     """Fetch raw image bytes with thumbnail upgrading and automatic SSL certificate verification self-healing."""
     return _safe_fetch_image_bytes(url, timeout=timeout)
+
+
+def fetch_pil_image(url: str, timeout: int = 5) -> Optional[Image.Image]:
+    """Fetch and decode album art as a cached RGB PIL Image for Sixel/TGP rendering."""
+    if not url:
+        return None
+    upgraded = upgrade_thumbnail_url(url)
+    if upgraded in _PIL_CACHE:
+        return _PIL_CACHE[upgraded]
+
+    content = _safe_fetch_image_bytes(upgraded, timeout=timeout)
+    if content:
+        try:
+            img = Image.open(io.BytesIO(content)).convert("RGB")
+            _PIL_CACHE[upgraded] = img
+            return img
+        except Exception:
+            pass
+    return None
 
 
 def render_album_art(url: str, width: int = 46, height: int = 20) -> str:

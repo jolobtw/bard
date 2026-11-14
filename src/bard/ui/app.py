@@ -39,6 +39,7 @@ class BardApp(App):
         Binding("n", "next_track", "Next"),
         Binding("p", "prev_track", "Previous"),
         Binding("s", "toggle_shuffle", "Shuffle"),
+        Binding("m", "toggle_mute", "Mute"),
         Binding("+", "volume_up", "Vol +"),
         Binding("=", "volume_up", "Vol +", show=False),
         Binding("-", "volume_down", "Vol -"),
@@ -62,6 +63,9 @@ class BardApp(App):
             on_play_pause=self.action_toggle_playback,
             on_next=self.action_next_track,
             on_shuffle=self.action_toggle_shuffle,
+            on_seek=self.action_seek_to,
+            on_volume=self.action_set_volume,
+            on_mute=self.action_toggle_mute,
         )
         self.drawer_widget = CurtainDrawer(
             self.client,
@@ -84,6 +88,7 @@ class BardApp(App):
         self._last_known_pos: float = 0.0
         self._last_known_dur: float = 0.0
         self._user_paused: bool = False
+        self._pre_mute_volume: int = 75
 
     def compose(self) -> ComposeResult:
         yield self.header_widget
@@ -494,6 +499,53 @@ class BardApp(App):
                     self.stage_widget.refresh_stage()
             except Exception:
                 pass
+
+    def action_set_volume(self, volume: int) -> None:
+        """Set volume to a specific percentage (0-100)."""
+        clamped = max(0, min(100, int(volume)))
+        if clamped > 0:
+            self._pre_mute_volume = clamped
+        if self.player:
+            try:
+                self.player.set_volume(clamped)
+            except Exception:
+                pass
+        if self.stage_widget.playback_data:
+            self.stage_widget.playback_data["volume"] = clamped
+            self.stage_widget.refresh_stage()
+
+    def action_toggle_mute(self) -> None:
+        """Mute or restore volume."""
+        curr = 100
+        if self.player:
+            try:
+                curr = self.player.get_volume()
+            except Exception:
+                curr = 100
+        elif self.stage_widget.playback_data:
+            curr = self.stage_widget.playback_data.get("volume", 100)
+
+        if curr > 0:
+            self._pre_mute_volume = curr
+            self.action_set_volume(0)
+        else:
+            self.action_set_volume(self._pre_mute_volume or 75)
+
+    def action_seek_to(self, position_seconds: float) -> None:
+        """Seek to an absolute position in seconds."""
+        if not self.player:
+            return
+        try:
+            curr_pos = self.player.get_position()
+            offset = float(position_seconds) - float(curr_pos)
+            self.player.seek(offset)
+            if self.stage_widget.playback_data:
+                new_ms = max(0, int(position_seconds * 1000))
+                self.stage_widget.playback_data["progress_ms"] = new_ms
+                self.stage_widget._current_progress_ms = new_ms
+                self.stage_widget.refresh_stage()
+        except Exception:
+            pass
 
     def action_toggle_drawer(self) -> None:
         """Toggle left curtain drawer."""

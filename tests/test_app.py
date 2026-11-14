@@ -531,21 +531,21 @@ def test_app_transport_buttons_clickable_in_app(tmp_path):
         app.current_track = t1
 
         async with app.run_test(size=(100, 40)) as pilot:
-            await pilot.click("#btn-shuffle")
+            await pilot.click("#transport-controls", offset=(20, 1))  # Shuffle
             await pilot.pause()
             assert app.shuffle_enabled is True
 
-            await pilot.click("#btn-play")
+            await pilot.click("#transport-controls", offset=(8, 1))  # Play/Pause circle
             await pilot.pause()
             player.pause.assert_called_once()
 
-            await pilot.click("#btn-next")
+            await pilot.click("#transport-controls", offset=(14, 1))  # Next
             await pilot.pause()
             await asyncio.sleep(0.1)
             assert app.current_index == 1
             assert app.current_track == t2
 
-            await pilot.click("#btn-prev")
+            await pilot.click("#transport-controls", offset=(1, 1))  # Prev
             await pilot.pause()
             await asyncio.sleep(0.1)
             assert app.current_index == 0
@@ -653,21 +653,21 @@ def test_app_transport_buttons_clickable_in_app(tmp_path):
         app.current_track = t1
 
         async with app.run_test(size=(100, 40)) as pilot:
-            await pilot.click("#btn-shuffle")
+            await pilot.click("#transport-controls", offset=(20, 1))  # Shuffle
             await pilot.pause()
             assert app.shuffle_enabled is True
 
-            await pilot.click("#btn-play")
+            await pilot.click("#transport-controls", offset=(8, 1))  # Play/Pause circle
             await pilot.pause()
             player.pause.assert_called_once()
 
-            await pilot.click("#btn-next")
+            await pilot.click("#transport-controls", offset=(14, 1))  # Next
             await pilot.pause()
             await asyncio.sleep(0.1)
             assert app.current_index == 1
             assert app.current_track == t2
 
-            await pilot.click("#btn-prev")
+            await pilot.click("#transport-controls", offset=(1, 1))  # Prev
             await pilot.pause()
             await asyncio.sleep(0.1)
             assert app.current_index == 0
