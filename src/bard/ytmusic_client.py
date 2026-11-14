@@ -86,7 +86,7 @@ def _parse_thumbnail(item: Dict[str, Any]) -> str:
     if "thumbnail_url" in item and isinstance(item["thumbnail_url"], str):
         return item["thumbnail_url"]
 
-    thumbs = item.get("thumbnails")
+    thumbs = item.get("thumbnails") or item.get("thumbnail")
     if isinstance(thumbs, list) and thumbs:
         last = thumbs[-1]
         if isinstance(last, dict) and "url" in last:
@@ -264,7 +264,7 @@ class YTMusicClient:
 
         duration_sec = item.get("duration_seconds")
         if duration_sec is None or not isinstance(duration_sec, (int, float)):
-            duration_sec = _parse_duration(item.get("duration") or duration_sec)
+            duration_sec = _parse_duration(item.get("duration") or item.get("length") or duration_sec)
         else:
             duration_sec = max(0, int(duration_sec))
 
@@ -452,6 +452,48 @@ class YTMusicClient:
                 tracks.append(track)
 
         return tracks
+
+    def get_shuffled_playlist_tracks(self, playlist_id: str, limit: int = 50) -> List[Track]:
+        """Retrieve shuffled tracks from a YouTube Music playlist or Liked Songs using the watch endpoint."""
+        if not playlist_id:
+            return []
+
+        pid = "LM" if playlist_id in ("liked", "LM") else playlist_id
+        raw_tracks = []
+        try:
+            res = self._ytm.get_watch_playlist(playlistId=pid, shuffle=True, limit=limit)
+            if isinstance(res, dict):
+                raw_tracks = res.get("tracks", [])
+        except Exception as exc:
+            logger.debug("Failed to get watch playlist for %s: %s", pid, exc)
+
+        tracks: List[Track] = []
+        if isinstance(raw_tracks, list):
+            for item in raw_tracks:
+                track = self._normalize_track(item)
+                if track is not None:
+                    tracks.append(track)
+                    if limit and len(tracks) >= limit:
+                        break
+
+        if tracks:
+            return tracks
+
+        # Fallback to standard playlist fetching + client-side shuffle
+        try:
+            if pid == "LM":
+                fallback = self.get_liked_songs(limit=limit)
+            else:
+                fallback = self.get_playlist_tracks(pid)
+            if fallback:
+                import random
+                shuffled = list(fallback)
+                random.shuffle(shuffled)
+                return shuffled[:limit] if limit else shuffled
+        except Exception as exc:
+            logger.debug("Fallback shuffle failed for %s: %s", pid, exc)
+
+        return []
 
     def get_trending(self, country: str = "US") -> List[Track]:
         """Fetch trending tracks/charts for a given country."""
