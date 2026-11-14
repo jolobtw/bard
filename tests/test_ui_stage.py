@@ -173,7 +173,7 @@ def test_zen_stage_clickable_transport_buttons_and_shuffle():
             play_btn = stage.query_one("#btn-play", Button)
             next_btn = stage.query_one("#btn-next", Button)
 
-            assert "Resume" in str(play_btn.label)
+            assert "▶" in str(play_btn.label)
             assert not shuffle_btn.has_class("-active")
 
             await pilot.click("#btn-shuffle")
@@ -194,7 +194,7 @@ def test_zen_stage_clickable_transport_buttons_and_shuffle():
                 "is_playing": True,
                 "album_art_url": "",
             })
-            assert "Pause" in str(play_btn.label)
+            assert "❚❚" in str(play_btn.label)
             assert play_btn.has_class("-playing")
 
     asyncio.run(_test())

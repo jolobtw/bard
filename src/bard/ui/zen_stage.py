@@ -92,58 +92,74 @@ class ZenStage(Widget):
 
     #progress-bar {
         text-align: center;
-        margin-bottom: 1;
+        margin-bottom: 0;
     }
 
     #transport-controls {
         width: 100%;
-        height: auto;
+        height: 3;
         align: center middle;
+        margin-top: 1;
         margin-bottom: 1;
     }
 
     .transport-btn {
-        width: auto;
-        min-width: 10;
+        width: 5;
+        min-width: 5;
         height: 3;
-        background: #1B1E2B;
-        color: #CDD6F4;
-        border: round #363B54;
-        padding: 0 2;
+        background: #181A24;
+        color: #A6ADC8;
+        border: none;
+        padding: 0;
         margin: 0 1;
-        text-style: none;
+        text-style: bold;
         content-align: center middle;
     }
 
     .transport-btn:hover {
-        background: #25293A;
+        background: #262938;
         color: #FFFFFF;
-        border: round #FFD166;
+        border: none;
     }
 
     .transport-btn:focus {
-        border: round #FF7A00;
-        text-style: bold;
+        background: #262938;
+        color: #FFD166;
+        border: none;
     }
 
     #btn-play {
-        min-width: 13;
+        width: 7;
+        min-width: 7;
+        background: #262938;
         color: #FFD166;
-        border: round #4B5273;
+        border: none;
+        margin: 0 2;
+    }
+
+    #btn-play:hover {
+        background: #32364A;
+        color: #FFFFFF;
     }
 
     #btn-play.-playing {
-        background: #2A1D16;
-        color: #FFD166;
-        border: round #FF7A00;
+        background: #FF7A00;
+        color: #13141C;
+        border: none;
         text-style: bold;
     }
 
+    #btn-play.-playing:hover {
+        background: #FF922B;
+        color: #13141C;
+    }
+
+    #btn-shuffle {
+        color: #6C7086;
+    }
+
     #btn-shuffle.-active {
-        background: #2A1D16;
-        color: #FFD166;
-        border: round #FF7A00;
-        text-style: bold;
+        color: #FF7A00;
     }
 
     #status-bar {
@@ -249,10 +265,10 @@ class ZenStage(Widget):
                 yield Static(id="track-meta")
                 yield Static(id="progress-bar")
                 with Horizontal(id="transport-controls"):
-                    yield Button("⇄ Shuffle", id="btn-shuffle", classes="transport-btn")
-                    yield Button("⏮ Prev", id="btn-prev", classes="transport-btn")
-                    yield Button("▶ Resume", id="btn-play", classes="transport-btn")
-                    yield Button("Next ⏭", id="btn-next", classes="transport-btn")
+                    yield Button("│◄", id="btn-prev", classes="transport-btn")
+                    yield Button("▶", id="btn-play", classes="transport-btn")
+                    yield Button("►│", id="btn-next", classes="transport-btn")
+                    yield Button("⇄", id="btn-shuffle", classes="transport-btn")
                 yield Static(id="status-bar")
                 yield Static(id="controls-hint")
 
@@ -326,10 +342,8 @@ class ZenStage(Widget):
 
         if self.shuffle_enabled:
             shuffle_btn.add_class("-active")
-            shuffle_btn.label = "⇄ Shuffle •"
         else:
             shuffle_btn.remove_class("-active")
-            shuffle_btn.label = "⇄ Shuffle"
 
         hint_text = Text.assemble(
             ("Tab", "bold #FFD166"),
@@ -363,7 +377,7 @@ class ZenStage(Widget):
                 )
             )
             bar_widget.update("")
-            play_btn.label = "▶ Resume"
+            play_btn.label = "▶"
             play_btn.remove_class("-playing")
             if self.device_name:
                 status_widget.update(f"[#6C7086]Ready to stream • {self.device_name}[/]")
@@ -387,10 +401,10 @@ class ZenStage(Widget):
         bar_widget.update(Text.from_markup(render_flame_progress(self._current_progress_ms, duration, width=52)))
 
         if is_playing:
-            play_btn.label = "⏸ Pause"
+            play_btn.label = "❚❚"
             play_btn.add_class("-playing")
         else:
-            play_btn.label = "▶ Play"
+            play_btn.label = "▶"
             play_btn.remove_class("-playing")
 
         # Dedicated status strip: volume & audio engine
