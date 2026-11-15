@@ -247,10 +247,10 @@ def test_zen_stage_visual_refinements_footer_pill_border_and_marquee():
         async with app.run_test(size=(100, 40)) as pilot:
             stage = app.query_one(ZenStage)
             art_box = stage.query_one("#art-box", Static)
-            kicker = stage.query_one("#track-kicker", Static)
             title = stage.query_one("#track-title", Static)
             hint = stage.query_one("#controls-hint", Static)
             seek_bar = stage.query_one("#progress-bar", SeekBar)
+            assert len(stage.query("#track-kicker")) == 0
 
             stage.refresh_stage()
             await pilot.pause()
@@ -276,13 +276,12 @@ def test_zen_stage_visual_refinements_footer_pill_border_and_marquee():
                 "album_art_url": "",
             })
             await pilot.pause()
-            assert "● PLAYING" in str(kicker.render())
 
             seek_rendered = str(seek_bar.render())
             assert "03:05" in seek_rendered
             assert "/ 06:33" in seek_rendered
 
-            # Paused state clears the indicator above the track name
+            # Paused state keeps metadata clean with no status kicker
             stage.update_playback({
                 "title": long_title,
                 "artist": "Artist",
@@ -293,7 +292,6 @@ def test_zen_stage_visual_refinements_footer_pill_border_and_marquee():
                 "album_art_url": "",
             })
             await pilot.pause()
-            assert "PAUSED" not in str(kicker.render())
 
             # 4. Marquee scroll advances after initial pause
             initial_visible = str(title.render())

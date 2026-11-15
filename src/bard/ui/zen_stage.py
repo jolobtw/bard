@@ -412,17 +412,13 @@ class ZenStage(Widget):
         width: 1fr;
         height: 3;
         padding-right: 2;
+        align: left middle;
     }
 
     #dock-right {
         width: 1fr;
         height: 3;
         align: right middle;
-    }
-
-    #track-kicker {
-        height: 1;
-        color: #6C7086;
     }
 
     #track-title {
@@ -471,7 +467,6 @@ class ZenStage(Widget):
         self._cached_art_ansi: str = ""
         self._last_rendered_dims: Optional[Tuple[int, int]] = None
         self.device_name: Optional[str] = None
-        self._last_kicker: str = ""
         self._last_title: str = ""
         self._last_meta: str = ""
         self._last_art_drawn: str = ""
@@ -575,7 +570,6 @@ class ZenStage(Widget):
                 with Vertical(id="player-dock"):
                     with Horizontal(id="dock-top-row"):
                         with Vertical(id="dock-meta"):
-                            yield Static("NOW PLAYING", id="track-kicker")
                             yield Static(id="track-title")
                             yield Static(id="track-meta")
                         yield TransportBar(
@@ -688,7 +682,6 @@ class ZenStage(Widget):
 
         art_center = self.query_one("#art-center")
         art_widget = self.query_one("#art-box", Static)
-        kicker_widget = self.query_one("#track-kicker", Static)
         title_widget = self.query_one("#track-title", Static)
         meta_widget = self.query_one("#track-meta", Static)
         transport = self.query_one("#transport-controls", TransportBar)
@@ -727,9 +720,6 @@ class ZenStage(Widget):
             if self._last_art_drawn:
                 art_widget.update("")
                 self._last_art_drawn = ""
-            if self._last_kicker != "READY":
-                kicker_widget.update("[#FF7A00 on #262938] ✦ [/][#A6ADC8 on #262938]READY [/]", layout=False)
-                self._last_kicker = "READY"
             self._full_title = ""
             self._marquee_offset = 0
             self._marquee_pause = 8
@@ -774,14 +764,6 @@ class ZenStage(Widget):
         volume = self.playback_data.get("volume", 50)
         is_playing = self.playback_data.get("is_playing", False)
         device_name = self.playback_data.get("device_name", self.device_name or "YouTube Music")
-
-        kicker_key = "PLAYING" if is_playing else "PAUSED"
-        if self._last_kicker != kicker_key:
-            if is_playing:
-                kicker_widget.update("[#FF7A00 on #262938] ● [/][bold #FFFFFF on #262938]PLAYING [/]", layout=False)
-            else:
-                kicker_widget.update("", layout=False)
-            self._last_kicker = kicker_key
 
         if title != self._full_title:
             self._full_title = title
