@@ -4,16 +4,71 @@ from __future__ import annotations
 
 import atexit
 import json
+import math
 import os
 import platform
+import random
 import socket
 import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Protocol
 
 from bard.audio_engine import AudioEngine
+
+
+class SpectrumProvider(Protocol):
+    """Interface for real-time or procedural audio spectrum band providers."""
+
+    def sample_bands(
+        self,
+        num_bands: int,
+        is_playing: bool,
+        volume: int = 100,
+        elapsed_s: float = 0.0,
+    ) -> List[float]:
+        """Return normalized [0.0, 1.0] energy levels for ``num_bands`` frequency columns."""
+        ...
+
+
+class ProceduralSpectrumProvider:
+    """Tempo- and volume-aware procedural spectrum generator synced to playback state.
+
+    Provides smooth multi-harmonic band energies without adding IPC or PCM tap latency
+    over headless mpv's single-command named pipe. Can be swapped for an FFT provider.
+    """
+
+    def __init__(self, baseline: float = 0.04) -> None:
+        self.baseline = baseline
+        self._phases = [i * 0.73 for i in range(16)]
+
+    def sample_bands(
+        self,
+        num_bands: int,
+        is_playing: bool,
+        volume: int = 100,
+        elapsed_s: float = 0.0,
+    ) -> List[float]:
+        if num_bands <= 0:
+            return []
+        if not is_playing or volume <= 0:
+            return [self.baseline] * num_bands
+
+        t = time.monotonic() + (elapsed_s * 0.15)
+        vol_scale = 0.35 + 0.65 * max(0.0, min(1.0, volume / 100.0))
+        bands: List[float] = []
+        for idx in range(num_bands):
+            phase = self._phases[idx % len(self._phases)]
+            # Bass-to-treble tilt: inner/lower bands carry slightly stronger energy
+            tilt = 1.0 - 0.30 * (idx / max(1, num_bands - 1))
+            wave1 = 0.5 + 0.5 * math.sin(t * (3.4 + idx * 0.45) + phase)
+            wave2 = 0.5 + 0.5 * math.cos(t * (5.9 - idx * 0.28) + phase * 1.7)
+            pulse = 0.5 + 0.5 * math.sin(t * 2.1 + idx * 0.3)
+            jitter = random.uniform(-0.08, 0.08)
+            raw = (0.45 * wave1 + 0.35 * wave2 + 0.20 * pulse) * tilt * vol_scale + jitter
+            bands.append(max(self.baseline, min(1.0, raw)))
+        return bands
 
 
 class AudioPlayer:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
@@ -12,6 +12,7 @@ from textual.widgets import Static
 
 from bard.arcane_theme import DEFAULT_THEME, hex_to_rgb, interpolate_rgb, load_theme, render_rich_gradient
 from bard.art import render_album_art
+from bard.audio_player import ProceduralSpectrumProvider, SpectrumProvider
 
 _DOCK_BG_ANSI = "\x1b[48;2;24;26;36m"  # #181A24
 _PALETTE = DEFAULT_THEME["palette"]
@@ -19,6 +20,100 @@ _GRAD_START_RGB = hex_to_rgb(_PALETTE.get("gradient_start", "#FF4500"))
 _GRAD_END_RGB = hex_to_rgb(_PALETTE.get("gradient_end", "#FFD166"))
 _TRACK_MUTED_HEX = _PALETTE.get("border_muted", "#2E3244")
 _THUMB_GOLD_HEX = _PALETTE.get("accent_gold", "#FFD166")
+
+
+_VIZ_ACTIVE_HEX = _PALETTE.get("accent_flame", "#FF7A00")
+_VIZ_CAP_HEX = _PALETTE.get("text_muted", "#6C7086")
+_VIZ_BLOCKS = (" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█")
+
+
+class AudioVisualizer(Widget):
+    """Lightweight block-character vertical audio visualizer with two-tone Arcane styling."""
+
+    DEFAULT_CSS = """
+    AudioVisualizer {
+        width: auto;
+        height: auto;
+        background: #13141C;
+    }
+    """
+
+    def __init__(
+        self,
+        num_bands: int = 6,
+        bar_height: int = 16,
+        mirror: bool = False,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
+        self.num_bands = max(0, num_bands)
+        self.bar_height = max(4, bar_height)
+        self.mirror = mirror
+        self.levels: List[float] = [0.04] * self.num_bands
+        self.peaks: List[float] = [0.04] * self.num_bands
+
+    def configure(self, num_bands: int, bar_height: int) -> None:
+        num_bands = max(0, num_bands)
+        bar_height = max(4, bar_height)
+        if num_bands == self.num_bands and bar_height == self.bar_height:
+            return
+        self.num_bands = num_bands
+        self.bar_height = bar_height
+        self.levels = (self.levels + [0.04] * num_bands)[:num_bands]
+        self.peaks = (self.peaks + [0.04] * num_bands)[:num_bands]
+        self.refresh()
+
+    def set_levels(self, levels: List[float], peaks: Optional[List[float]] = None) -> None:
+        if self.num_bands <= 0:
+            return
+        self.levels = list(levels[: self.num_bands])
+        if len(self.levels) < self.num_bands:
+            self.levels.extend([0.04] * (self.num_bands - len(self.levels)))
+        if peaks is not None:
+            self.peaks = list(peaks[: self.num_bands])
+            if len(self.peaks) < self.num_bands:
+                self.peaks.extend([0.04] * (self.num_bands - len(self.peaks)))
+        else:
+            self.peaks = list(self.levels)
+        self.refresh()
+
+    def render(self) -> Text:
+        if self.num_bands <= 0:
+            return Text("")
+
+        ordered_levels = list(reversed(self.levels)) if self.mirror else self.levels
+        ordered_peaks = list(reversed(self.peaks)) if self.mirror else self.peaks
+
+        h = self.bar_height
+        total_steps = h * 8
+        col_steps = [max(1, min(total_steps, int(round(lvl * total_steps)))) for lvl in ordered_levels]
+        peak_rows = [
+            max(0, min(h - 1, int(round(pk * (h - 1)))))
+            for pk in ordered_peaks
+        ]
+
+        out = Text()
+        for row_from_top in range(h):
+            row_from_bottom = (h - 1) - row_from_top
+            row_base = row_from_bottom * 8
+            for idx in range(self.num_bands):
+                if idx > 0:
+                    out.append(" ")
+                steps = col_steps[idx]
+                pk_row = peak_rows[idx]
+                if steps > row_base:
+                    fill = min(8, steps - row_base)
+                    glyph = _VIZ_BLOCKS[fill]
+                    is_cap = row_from_bottom >= pk_row or steps <= row_base + 8
+                    color = _VIZ_CAP_HEX if (is_cap and row_from_bottom == pk_row and pk_row > 0) else _VIZ_ACTIVE_HEX
+                    out.append(glyph, style=color)
+                elif row_from_bottom == pk_row and pk_row > 0:
+                    out.append("▁", style=_VIZ_CAP_HEX)
+                else:
+                    out.append(" ")
+            if row_from_top < h - 1:
+                out.append("\n")
+        return out
 
 
 def render_arcane_bar(filled: int, unfilled: int) -> str:
@@ -381,24 +476,32 @@ class ZenStage(Widget):
     }
 
     #art-center {
+        display: none;
         width: 100%;
         height: auto;
         content-align: center middle;
         margin-bottom: 1;
     }
 
-    #art-glow {
+    #art-row {
         width: auto;
         height: auto;
-        border: round #4D1A00;
-        background: #1C1216;
+        align: center middle;
+    }
+
+    #viz-left {
+        margin-right: 2;
+    }
+
+    #viz-right {
+        margin-left: 2;
     }
 
     #art-box {
         width: auto;
         height: auto;
-        border: inner #FF7A00;
-        background: #2D140C;
+        border: inner #2E3244;
+        background: #181A24;
     }
 
     #player-dock {
@@ -460,6 +563,7 @@ class ZenStage(Widget):
         on_seek: Optional[Callable[[float], None]] = None,
         on_volume: Optional[Callable[[int], None]] = None,
         on_mute: Optional[Callable[[], None]] = None,
+        spectrum_provider: Optional[SpectrumProvider] = None,
     ):
         super().__init__()
         self.on_prev = on_prev
@@ -470,6 +574,7 @@ class ZenStage(Widget):
         self.on_seek = on_seek
         self.on_volume = on_volume
         self.on_mute = on_mute
+        self.spectrum_provider: SpectrumProvider = spectrum_provider or ProceduralSpectrumProvider()
         self.shuffle_enabled: bool = False
         self.repeat_mode: str = "off"
         self.playback_data: Optional[Dict[str, Any]] = None
@@ -488,6 +593,10 @@ class ZenStage(Widget):
         self._marquee_pause: int = 8
         self._marquee_end_pause: int = 0
         self._marquee_timer: Any = None
+        self._viz_timer: Any = None
+        self._viz_bands: int = 0
+        self._viz_levels: List[float] = []
+        self._viz_peaks: List[float] = []
 
     def set_shuffle(self, enabled: bool) -> None:
         """Update shuffle toggle state and refresh transport controls."""
@@ -538,7 +647,8 @@ class ZenStage(Widget):
         return (46, 20)
 
     def on_resize(self, event: Any = None) -> None:
-        """Handle resize to adapt album art dimensions dynamically."""
+        """Handle resize to adapt album art dimensions and flanking visualizers dynamically."""
+        self._sync_visualizer_layout()
         if self.playback_data:
             art_w, art_h = self.get_art_dimensions()
             if self._last_rendered_dims != (art_w, art_h):
@@ -578,8 +688,10 @@ class ZenStage(Widget):
         with Center():
             with Vertical(id="stage-container"):
                 with Center(id="art-center"):
-                    with Vertical(id="art-glow"):
+                    with Horizontal(id="art-row"):
+                        yield AudioVisualizer(num_bands=6, bar_height=16, mirror=True, id="viz-left")
                         yield Static(id="art-box")
+                        yield AudioVisualizer(num_bands=6, bar_height=16, mirror=False, id="viz-right")
                 with Vertical(id="player-dock"):
                     with Horizontal(id="dock-top-row"):
                         with Vertical(id="dock-meta"):
@@ -771,6 +883,7 @@ class ZenStage(Widget):
 
         if not art_center.display:
             art_center.display = True
+        self._sync_visualizer_layout()
         if self._last_art_drawn != self._cached_art_ansi:
             art_widget.update(Text.from_ansi(self._cached_art_ansi))
             self._last_art_drawn = self._cached_art_ansi
@@ -861,7 +974,93 @@ class ZenStage(Widget):
             title_widget.update(f"[bold #FFFFFF]{title_visible}[/]", layout=False)
             self._last_title = title_visible
 
+    def _get_visualizer_dims(self) -> Tuple[int, int]:
+        """Compute flanking visualizer column count and height, collapsing on narrow terminals."""
+        term_size = getattr(self.app, "size", None) if self.app else None
+        width = getattr(term_size, "width", 0) or getattr(self.size, "width", 0) or 100
+        art_w, art_h = self.get_art_dimensions()
+        if width < 86:
+            return (0, art_h)
+        avail_per_side = max(0, (min(width, 100) - (art_w + 2) - 6) // 2)
+        num_bands = min(8, max(0, (avail_per_side + 1) // 2))
+        if num_bands < 3:
+            return (0, art_h)
+        bar_height = max(8, art_h - 2)
+        return (num_bands, bar_height)
+
+    def _sync_visualizer_layout(self) -> None:
+        if not self.is_mounted:
+            return
+        try:
+            viz_left = self.query_one("#viz-left", AudioVisualizer)
+            viz_right = self.query_one("#viz-right", AudioVisualizer)
+        except Exception:
+            return
+        num_bands, bar_height = self._get_visualizer_dims()
+        self._viz_bands = num_bands
+        if num_bands <= 0:
+            viz_left.display = False
+            viz_right.display = False
+            return
+        viz_left.display = True
+        viz_right.display = True
+        viz_left.configure(num_bands, bar_height)
+        viz_right.configure(num_bands, bar_height)
+        if len(self._viz_levels) != num_bands:
+            self._viz_levels = [0.04] * num_bands
+            self._viz_peaks = [0.04] * num_bands
+            viz_left.set_levels(self._viz_levels, self._viz_peaks)
+            viz_right.set_levels(self._viz_levels, self._viz_peaks)
+
+    def _tick_visualizer(self) -> None:
+        """Sample spectrum bands and apply smooth attack / exponential decay at ~22 FPS."""
+        if not self.is_mounted or not self.playback_data or self._viz_bands <= 0:
+            return
+        try:
+            viz_left = self.query_one("#viz-left", AudioVisualizer)
+            viz_right = self.query_one("#viz-right", AudioVisualizer)
+        except Exception:
+            return
+
+        is_playing = bool(self.playback_data.get("is_playing", False))
+        volume = int(self.playback_data.get("volume", 100) or 0)
+        elapsed_s = self._current_progress_ms / 1000.0
+        targets = self.spectrum_provider.sample_bands(
+            self._viz_bands,
+            is_playing=is_playing,
+            volume=volume,
+            elapsed_s=elapsed_s,
+        )
+        if len(self._viz_levels) != self._viz_bands:
+            self._viz_levels = [0.04] * self._viz_bands
+            self._viz_peaks = [0.04] * self._viz_bands
+
+        for i in range(self._viz_bands):
+            target = targets[i] if i < len(targets) else 0.04
+            curr = self._viz_levels[i]
+            alpha = 0.55 if target > curr else 0.22
+            nxt = curr + (target - curr) * alpha
+            self._viz_levels[i] = nxt
+            if nxt >= self._viz_peaks[i]:
+                self._viz_peaks[i] = nxt
+            else:
+                self._viz_peaks[i] = max(nxt, self._viz_peaks[i] - 0.035)
+
+        viz_left.set_levels(self._viz_levels, self._viz_peaks)
+        viz_right.set_levels(self._viz_levels, self._viz_peaks)
+
     def on_mount(self) -> None:
         self.refresh_stage()
+        self._sync_visualizer_layout()
         if self._marquee_timer is None:
             self._marquee_timer = self.set_interval(0.25, self._advance_title_marquee)
+        if self._viz_timer is None:
+            self._viz_timer = self.set_interval(0.045, self._tick_visualizer)
+
+    def on_unmount(self) -> None:
+        if self._marquee_timer is not None:
+            self._marquee_timer.stop()
+            self._marquee_timer = None
+        if self._viz_timer is not None:
+            self._viz_timer.stop()
+            self._viz_timer = None
