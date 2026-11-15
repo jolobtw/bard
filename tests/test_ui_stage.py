@@ -252,6 +252,7 @@ def test_zen_stage_visual_refinements_footer_pill_border_and_marquee():
             hint = stage.query_one("#controls-hint", Static)
             seek_bar = stage.query_one("#progress-bar", SeekBar)
 
+            stage.refresh_stage()
             await pilot.pause()
 
             # 1. Single-line shortcut footer
