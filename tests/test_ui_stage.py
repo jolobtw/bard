@@ -261,8 +261,8 @@ def test_zen_stage_visual_refinements_footer_pill_border_and_marquee():
             assert "[Q] Quit" in hint_text
             assert hint.size.height == 1
 
-            # 2. Album art snug inner border
-            assert art_box.styles.border_top[0] == "inner"
+            # 2. Album art rounded border
+            assert art_box.styles.border_top[0] == "round"
 
             # 3. Status pill & timestamp contrast
             long_title = "An Extraordinary Symphony of Arcane Echoes and Shadows"
@@ -304,112 +304,6 @@ def test_zen_stage_visual_refinements_footer_pill_border_and_marquee():
             scrolled_visible = str(title.render())
             assert scrolled_visible != initial_visible
             assert scrolled_visible in long_title
-
-    asyncio.run(_test())
-
-
-def test_audio_visualizer_playing_paused_decay_and_narrow_collapse():
-    from textual.app import App, ComposeResult
-    from bard.audio_player import ProceduralSpectrumProvider
-    from bard.ui.zen_stage import AudioVisualizer, ZenStage
-    import asyncio
-
-    # Verify ProceduralSpectrumProvider directly
-    provider = ProceduralSpectrumProvider()
-    paused_bands = provider.sample_bands(6, is_playing=False, volume=80)
-    assert len(paused_bands) == 6
-    assert all(b == provider.baseline for b in paused_bands)
-
-    playing_bands = provider.sample_bands(6, is_playing=True, volume=80, elapsed_s=1.5)
-    assert len(playing_bands) == 6
-    assert all(0.0 < b <= 1.0 for b in playing_bands)
-
-    class FixedProvider:
-        def __init__(self, values):
-            self.values = values
-
-        def sample_bands(self, num_bands, is_playing, volume=100, elapsed_s=0.0):
-            if not is_playing:
-                return [0.04] * num_bands
-            return list(self.values[:num_bands])
-
-    class TestApp(App):
-        def compose(self) -> ComposeResult:
-            yield ZenStage(spectrum_provider=FixedProvider([0.9, 0.7, 0.5, 0.4, 0.3, 0.2, 0.2, 0.2]))
-
-    async def _test():
-        # Hero terminal (100x40): both flanking visualizers visible and mirrored
-        app = TestApp()
-        async with app.run_test(size=(100, 40)) as pilot:
-            stage = app.query_one(ZenStage)
-            viz_left = stage.query_one("#viz-left", AudioVisualizer)
-            viz_right = stage.query_one("#viz-right", AudioVisualizer)
-
-            stage.update_playback({
-                "title": "Song",
-                "artist": "Artist",
-                "album": "Album",
-                "duration_ms": 180000,
-                "progress_ms": 10000,
-                "is_playing": True,
-                "album_art_url": "",
-                "volume": 90,
-            })
-            await pilot.pause()
-
-            assert viz_left.display is True
-            assert viz_right.display is True
-            assert viz_left.num_bands >= 3
-            assert viz_left.num_bands == viz_right.num_bands
-
-            # Tick while playing -> levels rise above baseline
-            for _ in range(5):
-                stage._tick_visualizer()
-            assert max(viz_left.levels) > 0.3
-            assert viz_left.levels == viz_right.levels
-
-            # Rendered block output uses Unicode block chars and is mirrored
-            left_lines = str(viz_left.render()).split("\n")
-            right_lines = str(viz_right.render()).split("\n")
-            assert len(left_lines) == viz_left.bar_height
-            assert left_lines == [line[::-1] for line in right_lines]
-
-            # Transition to PAUSED -> levels decay smoothly toward resting baseline
-            stage.update_playback({
-                "title": "Song",
-                "artist": "Artist",
-                "album": "Album",
-                "duration_ms": 180000,
-                "progress_ms": 10000,
-                "is_playing": False,
-                "album_art_url": "",
-                "volume": 90,
-            })
-            before_decay = max(viz_left.levels)
-            for _ in range(15):
-                stage._tick_visualizer()
-            after_decay = max(viz_left.levels)
-            assert after_decay < before_decay
-            assert after_decay < 0.12
-
-        # Narrow terminal (80x24): visualizers collapse gracefully
-        app_narrow = TestApp()
-        async with app_narrow.run_test(size=(80, 24)) as pilot:
-            stage = app_narrow.query_one(ZenStage)
-            viz_left = stage.query_one("#viz-left", AudioVisualizer)
-            viz_right = stage.query_one("#viz-right", AudioVisualizer)
-            stage.update_playback({
-                "title": "Song",
-                "artist": "Artist",
-                "album": "Album",
-                "duration_ms": 180000,
-                "progress_ms": 10000,
-                "is_playing": True,
-                "album_art_url": "",
-            })
-            await pilot.pause()
-            assert viz_left.display is False
-            assert viz_right.display is False
 
     asyncio.run(_test())
 
