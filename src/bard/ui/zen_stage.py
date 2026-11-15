@@ -410,30 +410,36 @@ class ZenStage(Widget):
 
     #dock-meta {
         width: 1fr;
-        height: 3;
+        height: 100%;
         padding-right: 2;
-        align: left middle;
+        align: center middle;
     }
 
     #dock-right {
         width: 1fr;
-        height: 3;
-        align: right middle;
+        height: 100%;
+        align: center middle;
     }
 
     #track-title {
+        width: 100%;
         height: 1;
+        text-align: center;
         text-style: bold;
         color: #FFFFFF;
     }
 
     #track-meta {
+        width: 100%;
         height: 1;
+        text-align: center;
         color: #A6ADC8;
     }
 
     #track-source {
+        width: 100%;
         height: 1;
+        text-align: center;
         color: #6C7086;
     }
 
@@ -752,6 +758,8 @@ class ZenStage(Widget):
             if self._last_source != "":
                 source_widget.update("", layout=False)
                 self._last_source = ""
+            if source_widget.display:
+                source_widget.display = False
             transport.set_state(
                 is_playing=False,
                 has_track=False,
@@ -805,6 +813,9 @@ class ZenStage(Widget):
         if self._last_source != source_text:
             source_widget.update(source_text, layout=False)
             self._last_source = source_text
+        want_source_display = bool(source_text)
+        if source_widget.display != want_source_display:
+            source_widget.display = want_source_display
 
         transport.set_state(
             is_playing=is_playing,
