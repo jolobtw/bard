@@ -412,19 +412,18 @@ class ZenStage(Widget):
         width: 1fr;
         height: 100%;
         padding-right: 2;
-        align: center middle;
+        align: left middle;
     }
 
     #dock-right {
         width: 1fr;
         height: 100%;
-        align: center middle;
+        align: right middle;
     }
 
     #track-title {
         width: 100%;
         height: 1;
-        text-align: center;
         text-style: bold;
         color: #FFFFFF;
     }
@@ -432,14 +431,12 @@ class ZenStage(Widget):
     #track-meta {
         width: 100%;
         height: 1;
-        text-align: center;
         color: #A6ADC8;
     }
 
     #track-source {
         width: 100%;
         height: 1;
-        text-align: center;
         color: #6C7086;
     }
 
