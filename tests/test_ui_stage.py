@@ -282,7 +282,7 @@ def test_zen_stage_visual_refinements_footer_pill_border_and_marquee():
             assert "03:05" in seek_rendered
             assert "/ 06:33" in seek_rendered
 
-            # Paused state pill
+            # Paused state clears the indicator above the track name
             stage.update_playback({
                 "title": long_title,
                 "artist": "Artist",
@@ -293,7 +293,7 @@ def test_zen_stage_visual_refinements_footer_pill_border_and_marquee():
                 "album_art_url": "",
             })
             await pilot.pause()
-            assert "● PAUSED" in str(kicker.render())
+            assert "PAUSED" not in str(kicker.render())
 
             # 4. Marquee scroll advances after initial pause
             initial_visible = str(title.render())

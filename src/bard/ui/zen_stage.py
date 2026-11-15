@@ -780,7 +780,7 @@ class ZenStage(Widget):
             if is_playing:
                 kicker_widget.update("[#FF7A00 on #262938] ● [/][bold #FFFFFF on #262938]PLAYING [/]", layout=False)
             else:
-                kicker_widget.update("[#FF7A00 on #262938] ● [/][#A6ADC8 on #262938]PAUSED [/]", layout=False)
+                kicker_widget.update("", layout=False)
             self._last_kicker = kicker_key
 
         if title != self._full_title:
