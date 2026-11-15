@@ -81,6 +81,7 @@ class BardApp(App):
         self._original_queue: List[Track] = []
         self.shuffle_enabled: bool = False
         self.repeat_mode: str = "off"
+        self.current_source: str = ""
         self.current_index: int = -1
         self.current_track: Optional[Track] = None
 
@@ -190,6 +191,9 @@ class BardApp(App):
         else:
             return
 
+        if hasattr(self.drawer_widget, "get_source_label"):
+            self.current_source = self.drawer_widget.get_source_label() or ""
+
         if hasattr(self.drawer_widget, "tracks") and self.drawer_widget.tracks:
             self.queue = list(self.drawer_widget.tracks)
             self._original_queue = list(self.queue)
@@ -264,6 +268,7 @@ class BardApp(App):
         """Initialize active queue with shuffled tracks and start playback on track 0."""
         self.queue = list(tracks)
         self._original_queue = list(tracks)
+        self.current_source = (title or "").lstrip("❤️🔥🕒🔎📋 ").strip() or title
         self.shuffle_enabled = True
         self.stage_widget.set_shuffle(True)
         self.current_index = 0
@@ -359,6 +364,8 @@ class BardApp(App):
 
         track_data = track.to_dict()
         track_data["is_playing"] = True
+        if self.current_source:
+            track_data["playlist_source"] = self.current_source
         if self.player:
             try:
                 track_data["volume"] = self.player.get_volume()

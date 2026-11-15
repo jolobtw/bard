@@ -168,6 +168,20 @@ class CurtainDrawer(Widget):
         self._current_items: List[Any] = []
         self.categories: List[Dict[str, Any]] = self._build_categories(self._is_authenticated())
 
+    def get_source_label(self) -> str:
+        """Return a clean human-readable source name (playlist, album, or category) for the current track list."""
+        if self._current_container:
+            title = (self._current_container.get("title") or "").strip()
+            if title:
+                return title
+        if 0 <= self._current_cat_idx < len(self.categories):
+            cat = self.categories[self._current_cat_idx]
+            name = (cat.get("name") or "").lstrip("❤️🔥🕒🔎📋 ").strip()
+            if name == "Search" and self._active_query:
+                return f"Search: {self._active_query}"
+            return name
+        return ""
+
     def _is_authenticated(self) -> bool:
         """Check whether underlying client is authenticated."""
         if not self.client:

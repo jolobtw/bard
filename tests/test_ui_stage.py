@@ -248,6 +248,7 @@ def test_zen_stage_visual_refinements_footer_pill_border_and_marquee():
             stage = app.query_one(ZenStage)
             art_box = stage.query_one("#art-box", Static)
             title = stage.query_one("#track-title", Static)
+            source = stage.query_one("#track-source", Static)
             hint = stage.query_one("#controls-hint", Static)
             seek_bar = stage.query_one("#progress-bar", SeekBar)
             assert len(stage.query("#track-kicker")) == 0
@@ -270,12 +271,14 @@ def test_zen_stage_visual_refinements_footer_pill_border_and_marquee():
                 "title": long_title,
                 "artist": "Artist",
                 "album": "Album",
+                "playlist_source": "Synthwave Favorites",
                 "duration_ms": 393000,
                 "progress_ms": 185000,
                 "is_playing": True,
                 "album_art_url": "",
             })
             await pilot.pause()
+            assert "Synthwave Favorites" in str(source.render())
 
             seek_rendered = str(seek_bar.render())
             assert "03:05" in seek_rendered

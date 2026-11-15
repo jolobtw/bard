@@ -432,6 +432,11 @@ class ZenStage(Widget):
         color: #A6ADC8;
     }
 
+    #track-source {
+        height: 1;
+        color: #6C7086;
+    }
+
     #controls-hint {
         text-align: center;
         color: #6C7086;
@@ -469,6 +474,7 @@ class ZenStage(Widget):
         self.device_name: Optional[str] = None
         self._last_title: str = ""
         self._last_meta: str = ""
+        self._last_source: str = ""
         self._last_art_drawn: str = ""
         self._hint_initialized: bool = False
         self._full_title: str = ""
@@ -572,6 +578,7 @@ class ZenStage(Widget):
                         with Vertical(id="dock-meta"):
                             yield Static(id="track-title")
                             yield Static(id="track-meta")
+                            yield Static(id="track-source")
                         yield TransportBar(
                             on_prev=self._handle_prev,
                             on_play_pause=self._handle_play_pause,
@@ -684,6 +691,7 @@ class ZenStage(Widget):
         art_widget = self.query_one("#art-box", Static)
         title_widget = self.query_one("#track-title", Static)
         meta_widget = self.query_one("#track-meta", Static)
+        source_widget = self.query_one("#track-source", Static)
         transport = self.query_one("#transport-controls", TransportBar)
         volume_bar = self.query_one("#volume-control", VolumeBar)
         seek_bar = self.query_one("#progress-bar", SeekBar)
@@ -741,6 +749,9 @@ class ZenStage(Widget):
                     layout=False,
                 )
                 self._last_meta = "__EMPTY__"
+            if self._last_source != "":
+                source_widget.update("", layout=False)
+                self._last_source = ""
             transport.set_state(
                 is_playing=False,
                 has_track=False,
@@ -783,6 +794,17 @@ class ZenStage(Widget):
         if self._last_meta != meta_trunc:
             meta_widget.update(f"[dim #A6ADC8]{meta_trunc}[/]", layout=False)
             self._last_meta = meta_trunc
+
+        source_raw = (self.playback_data.get("playlist_source") or self.playback_data.get("source") or "").strip()
+        if source_raw:
+            src_limit = max(24, title_width - 2)
+            source_trunc = source_raw if len(source_raw) <= src_limit else source_raw[: src_limit - 1] + "…"
+            source_text = f"[dim #6C7086]♫ {source_trunc}[/]"
+        else:
+            source_text = ""
+        if self._last_source != source_text:
+            source_widget.update(source_text, layout=False)
+            self._last_source = source_text
 
         transport.set_state(
             is_playing=is_playing,
