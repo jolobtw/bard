@@ -387,11 +387,18 @@ class ZenStage(Widget):
         margin-bottom: 1;
     }
 
+    #art-glow {
+        width: auto;
+        height: auto;
+        border: round #4D1A00;
+        background: #1C1216;
+    }
+
     #art-box {
         width: auto;
         height: auto;
-        border: round #2E3244;
-        background: #13141C;
+        border: inner #FF7A00;
+        background: #2D140C;
     }
 
     #player-dock {
@@ -571,7 +578,8 @@ class ZenStage(Widget):
         with Center():
             with Vertical(id="stage-container"):
                 with Center(id="art-center"):
-                    yield Static(id="art-box")
+                    with Vertical(id="art-glow"):
+                        yield Static(id="art-box")
                 with Vertical(id="player-dock"):
                     with Horizontal(id="dock-top-row"):
                         with Vertical(id="dock-meta"):
