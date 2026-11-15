@@ -232,4 +232,79 @@ def test_zen_stage_clickable_transport_buttons_and_shuffle():
     asyncio.run(_test())
 
 
+def test_zen_stage_visual_refinements_footer_pill_border_and_marquee():
+    from textual.app import App, ComposeResult
+    from textual.widgets import Static
+    from bard.ui.zen_stage import SeekBar, ZenStage
+    import asyncio
+
+    class TestApp(App):
+        def compose(self) -> ComposeResult:
+            yield ZenStage()
+
+    async def _test():
+        app = TestApp()
+        async with app.run_test(size=(100, 40)) as pilot:
+            stage = app.query_one(ZenStage)
+            art_box = stage.query_one("#art-box", Static)
+            kicker = stage.query_one("#track-kicker", Static)
+            title = stage.query_one("#track-title", Static)
+            hint = stage.query_one("#controls-hint", Static)
+            seek_bar = stage.query_one("#progress-bar", SeekBar)
+
+            await pilot.pause()
+
+            # 1. Single-line shortcut footer
+            hint_text = str(hint.render())
+            assert "[Tab] Explore" in hint_text
+            assert "[Q] Quit" in hint_text
+            assert hint.size.height == 1
+
+            # 2. Album art rounded border
+            assert art_box.styles.border_top[0] == "round"
+
+            # 3. Status pill & timestamp contrast
+            long_title = "An Extraordinary Symphony of Arcane Echoes and Shadows"
+            stage.update_playback({
+                "title": long_title,
+                "artist": "Artist",
+                "album": "Album",
+                "duration_ms": 393000,
+                "progress_ms": 185000,
+                "is_playing": True,
+                "album_art_url": "",
+            })
+            await pilot.pause()
+            assert "● PLAYING" in str(kicker.render())
+
+            seek_rendered = str(seek_bar.render())
+            assert "03:05" in seek_rendered
+            assert "/ 06:33" in seek_rendered
+
+            # Paused state pill
+            stage.update_playback({
+                "title": long_title,
+                "artist": "Artist",
+                "album": "Album",
+                "duration_ms": 393000,
+                "progress_ms": 185000,
+                "is_playing": False,
+                "album_art_url": "",
+            })
+            await pilot.pause()
+            assert "● PAUSED" in str(kicker.render())
+
+            # 4. Marquee scroll advances after initial pause
+            initial_visible = str(title.render())
+            assert long_title.startswith(initial_visible)
+            assert "…" not in initial_visible
+            stage._marquee_pause = 0
+            stage._advance_title_marquee()
+            scrolled_visible = str(title.render())
+            assert scrolled_visible != initial_visible
+            assert scrolled_visible in long_title
+
+    asyncio.run(_test())
+
+
 

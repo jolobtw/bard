@@ -350,14 +350,14 @@ class SeekBar(Widget):
         w = max(24, self.size.width or 80)
         curr_str = format_ms(self.progress_ms)
         total_str = format_ms(self.duration_ms)
-        ts_plain = f"{curr_str}/{total_str}"
+        ts_plain = f"{curr_str} / {total_str}"
         bar_w = max(10, w - len(ts_plain) - 2)
 
         pct = min(1.0, max(0.0, self.progress_ms / self.duration_ms)) if self.duration_ms > 0 else 0.0
         filled = int((bar_w - 1) * pct)
         unfilled = max(0, (bar_w - 1) - filled)
         bar_line = render_arcane_bar(filled, unfilled)
-        return Text.from_markup(f"{bar_line}  [dim #A6ADC8]{curr_str}[/][dim #6C7086]/{total_str}[/]")
+        return Text.from_markup(f"{bar_line}  [bold #FF7A00]{curr_str}[/][#6C7086] / {total_str}[/]")
 
 
 class ZenStage(Widget):
@@ -372,8 +372,8 @@ class ZenStage(Widget):
     }
 
     #stage-container {
-        width: 92;
-        max-width: 96%;
+        width: 100;
+        max-width: 98%;
         height: auto;
         background: #13141C;
         padding: 0 1;
@@ -390,6 +390,8 @@ class ZenStage(Widget):
     #art-box {
         width: auto;
         height: auto;
+        border: round #2E3244;
+        background: #13141C;
     }
 
     #player-dock {
@@ -474,6 +476,11 @@ class ZenStage(Widget):
         self._last_meta: str = ""
         self._last_art_drawn: str = ""
         self._hint_initialized: bool = False
+        self._full_title: str = ""
+        self._marquee_offset: int = 0
+        self._marquee_pause: int = 8
+        self._marquee_end_pause: int = 0
+        self._marquee_timer: Any = None
 
     def set_shuffle(self, enabled: bool) -> None:
         """Update shuffle toggle state and refresh transport controls."""
@@ -692,22 +699,22 @@ class ZenStage(Widget):
         if not self._hint_initialized:
             hint_widget.update(
                 Text.assemble(
-                    ("Tab", "bold #FFD166"),
+                    ("[Tab]", "bold #FF7A00"),
                     (" Explore", "#6C7086"),
-                    ("   •   ", "#2E3244"),
-                    ("Space", "bold #FFD166"),
+                    (" • ", "#2E3244"),
+                    ("[Space]", "bold #FF7A00"),
                     (" Play/Pause", "#6C7086"),
-                    ("   •   ", "#2E3244"),
-                    ("S", "bold #FFD166"),
+                    (" • ", "#2E3244"),
+                    ("[S]", "bold #FF7A00"),
                     (" Shuffle", "#6C7086"),
-                    ("   •   ", "#2E3244"),
-                    ("R", "bold #FFD166"),
+                    (" • ", "#2E3244"),
+                    ("[R]", "bold #FF7A00"),
                     (" Repeat", "#6C7086"),
-                    ("   •   ", "#2E3244"),
-                    ("+/-", "bold #FFD166"),
+                    (" • ", "#2E3244"),
+                    ("[+/-]", "bold #FF7A00"),
                     (" Volume", "#6C7086"),
-                    ("   •   ", "#2E3244"),
-                    ("Q", "bold #FFD166"),
+                    (" • ", "#2E3244"),
+                    ("[Q]", "bold #FF7A00"),
                     (" Quit", "#6C7086"),
                 ),
                 layout=False,
@@ -721,8 +728,12 @@ class ZenStage(Widget):
                 art_widget.update("")
                 self._last_art_drawn = ""
             if self._last_kicker != "READY":
-                kicker_widget.update("[dim #FF7A00]✦ READY[/]", layout=False)
+                kicker_widget.update("[#FF7A00 on #262938] ✦ [/][#A6ADC8 on #262938]READY [/]", layout=False)
                 self._last_kicker = "READY"
+            self._full_title = ""
+            self._marquee_offset = 0
+            self._marquee_pause = 8
+            self._marquee_end_pause = 0
             if self._last_title != "__EMPTY__":
                 theme = load_theme()
                 palette = theme.get("palette", {})
@@ -767,18 +778,26 @@ class ZenStage(Widget):
         kicker_key = "PLAYING" if is_playing else "PAUSED"
         if self._last_kicker != kicker_key:
             if is_playing:
-                kicker_widget.update("[dim #FF7A00]NOW PLAYING[/]", layout=False)
+                kicker_widget.update("[#FF7A00 on #262938] ● [/][bold #FFFFFF on #262938]PLAYING [/]", layout=False)
             else:
-                kicker_widget.update("[dim #6C7086]PAUSED[/]", layout=False)
+                kicker_widget.update("[#FF7A00 on #262938] ● [/][#A6ADC8 on #262938]PAUSED [/]", layout=False)
             self._last_kicker = kicker_key
 
-        title_trunc = title if len(title) <= 24 else title[:23] + "…"
-        if self._last_title != title_trunc:
-            title_widget.update(f"[bold #FFFFFF]{title_trunc}[/]", layout=False)
-            self._last_title = title_trunc
+        if title != self._full_title:
+            self._full_title = title
+            self._marquee_offset = 0
+            self._marquee_pause = 8
+            self._marquee_end_pause = 0
+
+        title_width = self._get_title_width(title_widget)
+        title_visible = self._slice_title_marquee(title, title_width)
+        if self._last_title != title_visible:
+            title_widget.update(f"[bold #FFFFFF]{title_visible}[/]", layout=False)
+            self._last_title = title_visible
 
         meta_raw = f"{artist} • {album}" if album else artist
-        meta_trunc = meta_raw if len(meta_raw) <= 26 else meta_raw[:25] + "…"
+        meta_limit = max(26, title_width)
+        meta_trunc = meta_raw if len(meta_raw) <= meta_limit else meta_raw[: meta_limit - 1] + "…"
         if self._last_meta != meta_trunc:
             meta_widget.update(f"[dim #A6ADC8]{meta_trunc}[/]", layout=False)
             self._last_meta = meta_trunc
@@ -792,5 +811,49 @@ class ZenStage(Widget):
         volume_bar.set_state(volume=volume, device_name=device_name)
         seek_bar.set_progress(self._current_progress_ms, duration)
 
+    def _get_title_width(self, title_widget: Static) -> int:
+        w = getattr(title_widget.size, "width", 0) or 0
+        return max(24, w) if w > 0 else 34
+
+    def _slice_title_marquee(self, title: str, width: int) -> str:
+        if len(title) <= width:
+            return title
+        max_offset = len(title) - width
+        offset = max(0, min(self._marquee_offset, max_offset))
+        return title[offset : offset + width]
+
+    def _advance_title_marquee(self) -> None:
+        if not self.is_mounted or not self.playback_data or not self._full_title:
+            return
+        try:
+            title_widget = self.query_one("#track-title", Static)
+        except Exception:
+            return
+        width = self._get_title_width(title_widget)
+        if len(self._full_title) <= width:
+            return
+
+        max_offset = len(self._full_title) - width
+        if self._marquee_pause > 0:
+            self._marquee_pause -= 1
+            return
+        if self._marquee_offset < max_offset:
+            self._marquee_offset += 1
+            if self._marquee_offset == max_offset:
+                self._marquee_end_pause = 8
+        elif self._marquee_end_pause > 0:
+            self._marquee_end_pause -= 1
+            return
+        else:
+            self._marquee_offset = 0
+            self._marquee_pause = 8
+
+        title_visible = self._slice_title_marquee(self._full_title, width)
+        if self._last_title != title_visible:
+            title_widget.update(f"[bold #FFFFFF]{title_visible}[/]", layout=False)
+            self._last_title = title_visible
+
     def on_mount(self) -> None:
         self.refresh_stage()
+        if self._marquee_timer is None:
+            self._marquee_timer = self.set_interval(0.25, self._advance_title_marquee)
