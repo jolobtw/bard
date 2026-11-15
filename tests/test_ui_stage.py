@@ -262,8 +262,8 @@ def test_zen_stage_visual_refinements_footer_pill_border_and_marquee():
             assert "[Q] Quit" in hint_text
             assert hint.size.height == 1
 
-            # 2. Album art rounded border
-            assert art_box.styles.border_top[0] == "round"
+            # 2. Album art snug inner Arcane orange border (zero gap)
+            assert art_box.styles.border_top[0] == "inner"
 
             # 3. Status pill & timestamp contrast
             long_title = "An Extraordinary Symphony of Arcane Echoes and Shadows"

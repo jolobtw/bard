@@ -390,7 +390,7 @@ class ZenStage(Widget):
     #art-box {
         width: auto;
         height: auto;
-        border: round #2E3244;
+        border: inner #FF7A00;
         background: #13141C;
     }
 
