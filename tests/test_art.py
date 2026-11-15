@@ -141,4 +141,22 @@ def test_image_to_ansi_uses_sextant_blocks():
     assert "\U0001fb0e" in lines[0]
 
 
+def test_frame_art_ansi_thin_zero_gap_border():
+    from rich.text import Text
+    from bard.art import frame_art_ansi
+
+    assert frame_art_ansi("") == ""
+
+    sample = "\x1b[38;2;255;0;0m███\x1b[0m\n\x1b[38;2;0;255;0m███\x1b[0m"
+    framed = frame_art_ansi(sample, border_hex="#FF7A00", bg_hex="#13141C")
+    lines = framed.split("\n")
+    assert len(lines) == 4  # 2 art rows + top + bottom
+
+    plain_lines = [Text.from_ansi(line).plain for line in lines]
+    assert plain_lines[0] == " ▁▁▁ "
+    assert plain_lines[1] == "▕███▏"
+    assert plain_lines[2] == "▕███▏"
+    assert plain_lines[3] == " ▔▔▔ "
+
+
 

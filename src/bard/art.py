@@ -294,3 +294,49 @@ def render_album_art(url: str, width: int = 46, height: int = 20) -> str:
             pass
 
     return render_placeholder(width, height)
+
+
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _hex_to_rgb_tuple(hex_color: str) -> Tuple[int, int, int]:
+    cleaned = hex_color.strip().lstrip("#")
+    if len(cleaned) != 6:
+        return (255, 122, 0)
+    try:
+        return (int(cleaned[0:2], 16), int(cleaned[2:4], 16), int(cleaned[4:6], 16))
+    except ValueError:
+        return (255, 122, 0)
+
+
+def frame_art_ansi(
+    art_ansi: str,
+    border_hex: str = "#FF7A00",
+    bg_hex: str = "#13141C",
+) -> str:
+    """Wrap ANSI album art in a 1/8-cell thin zero-gap border using Unicode block elements."""
+    if not art_ansi:
+        return ""
+
+    lines = art_ansi.split("\n")
+    art_width = max((len(_ANSI_ESCAPE_RE.sub("", line)) for line in lines), default=0)
+    if art_width <= 0:
+        return art_ansi
+
+    br, bg, bb = _hex_to_rgb_tuple(border_hex)
+    cr, cg, cb = _hex_to_rgb_tuple(bg_hex)
+    fg_bg = f"\x1b[38;2;{br};{bg};{bb}m\x1b[48;2;{cr};{cg};{cb}m"
+    bg_only = f"\x1b[48;2;{cr};{cg};{cb}m"
+    rst = "\x1b[0m"
+
+    corner = f"{bg_only} {rst}"
+    top = f"{corner}{fg_bg}{'▁' * art_width}{rst}{corner}"
+    bottom = f"{corner}{fg_bg}{'▔' * art_width}{rst}{corner}"
+    left = f"{fg_bg}▕{rst}"
+    right = f"{fg_bg}▏{rst}"
+
+    framed = [top]
+    for line in lines:
+        framed.append(f"{left}{line}{right}")
+    framed.append(bottom)
+    return "\n".join(framed)

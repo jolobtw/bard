@@ -11,7 +11,7 @@ from textual.widget import Widget
 from textual.widgets import Static
 
 from bard.arcane_theme import DEFAULT_THEME, hex_to_rgb, interpolate_rgb, load_theme, render_rich_gradient
-from bard.art import render_album_art
+from bard.art import frame_art_ansi, render_album_art
 
 _DOCK_BG_ANSI = "\x1b[48;2;24;26;36m"  # #181A24
 _PALETTE = DEFAULT_THEME["palette"]
@@ -390,7 +390,6 @@ class ZenStage(Widget):
     #art-box {
         width: auto;
         height: auto;
-        border: inner #FF7A00;
         background: #13141C;
     }
 
@@ -545,7 +544,7 @@ class ZenStage(Widget):
                 if self.is_mounted:
                     try:
                         art_widget = self.query_one("#art-box", Static)
-                        art_widget.update(Text.from_ansi(self._cached_art_ansi))
+                        art_widget.update(Text.from_ansi(self._render_framed_art()))
                         self._last_art_drawn = self._cached_art_ansi
                     except Exception:
                         pass
@@ -770,7 +769,7 @@ class ZenStage(Widget):
         if not art_center.display:
             art_center.display = True
         if self._last_art_drawn != self._cached_art_ansi:
-            art_widget.update(Text.from_ansi(self._cached_art_ansi))
+            art_widget.update(Text.from_ansi(self._render_framed_art()))
             self._last_art_drawn = self._cached_art_ansi
 
         title = self.playback_data.get("title", "Unknown")
@@ -822,6 +821,12 @@ class ZenStage(Widget):
         )
         volume_bar.set_state(volume=volume, device_name=device_name)
         seek_bar.set_progress(self._current_progress_ms, duration)
+
+    def _render_framed_art(self) -> str:
+        palette = load_theme().get("palette", {})
+        border_hex = palette.get("accent_flame", _PALETTE.get("accent_flame", "#FF7A00"))
+        bg_hex = palette.get("canvas_bg", _PALETTE.get("canvas_bg", "#13141C"))
+        return frame_art_ansi(self._cached_art_ansi, border_hex=border_hex, bg_hex=bg_hex)
 
     def _get_title_width(self, title_widget: Static) -> int:
         w = getattr(title_widget.size, "width", 0) or 0

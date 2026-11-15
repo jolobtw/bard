@@ -262,8 +262,8 @@ def test_zen_stage_visual_refinements_footer_pill_border_and_marquee():
             assert "[Q] Quit" in hint_text
             assert hint.size.height == 1
 
-            # 2. Album art snug inner Arcane orange border (zero gap)
-            assert art_box.styles.border_top[0] == "inner"
+            # 2. Album art thin 1/8-cell zero-gap Arcane orange border (no CSS border)
+            assert art_box.styles.border_top[0] in ("", "none")
 
             # 3. Status pill & timestamp contrast
             long_title = "An Extraordinary Symphony of Arcane Echoes and Shadows"
@@ -279,6 +279,9 @@ def test_zen_stage_visual_refinements_footer_pill_border_and_marquee():
             })
             await pilot.pause()
             assert "Synthwave Favorites" in str(source.render())
+            art_plain = str(art_box.render())
+            assert "▁" in art_plain and "▔" in art_plain
+            assert "▕" in art_plain and "▏" in art_plain
 
             seek_rendered = str(seek_bar.render())
             assert "03:05" in seek_rendered
