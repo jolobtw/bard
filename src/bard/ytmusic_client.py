@@ -682,6 +682,7 @@ class YTMusicClient:
                 ydl_opts.update(cookie_opts)
             if js_runtimes:
                 ydl_opts["js_runtimes"] = js_runtimes
+                ydl_opts["remote_components"] = ["ejs:github"]
             if client:
                 ydl_opts["extractor_args"] = {"youtube": {"player_client": client}}
 

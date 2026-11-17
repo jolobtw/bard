@@ -286,6 +286,8 @@ def test_get_stream_url_passes_zen_cookies_from_config(tmp_path):
         assert url == "https://googlevideo.com/age_ok"
         ydl_opts = MockYDL.call_args[0][0]
         assert ydl_opts["cookiesfrombrowser"] == ("firefox", "C:/Users/test/AppData/Roaming/zen/Profiles")
+        if "js_runtimes" in ydl_opts:
+            assert ydl_opts["remote_components"] == ["ejs:github"]
 
 
 def test_get_stream_url_passes_cookie_file():
