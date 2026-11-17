@@ -9,6 +9,8 @@ import random
 import re
 import shutil
 import sys
+import threading
+import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import requests
@@ -245,6 +247,8 @@ class YTMusicClient:
         self._authenticated = False
         self._anon_instance: Optional[YTMusic] = None
         self.last_stream_error: Optional[str] = None
+        self._ydl_cache: Dict[str, Tuple[float, Any]] = {}
+        self._ydl_lock = threading.Lock()
         self.cookies_from_browser: str = (
             cookies_from_browser
             if cookies_from_browser is not None
@@ -672,11 +676,13 @@ class YTMusicClient:
         last_error_msg: Optional[str] = None
 
         for client in strategies:
+            strategy_key = ",".join(client) if client else "default"
             ydl_opts: Dict[str, Any] = {
                 "format": "bestaudio/best",
                 "quiet": True,
                 "no_warnings": True,
                 "noplaylist": True,
+                "socket_timeout": 10,
             }
             if cookie_opts:
                 ydl_opts.update(cookie_opts)
@@ -687,23 +693,46 @@ class YTMusicClient:
                 ydl_opts["extractor_args"] = {"youtube": {"player_client": client}}
 
             try:
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(url, download=False)
-                    if not info or not isinstance(info, dict):
-                        continue
+                now = time.monotonic()
+                cached_ydl = None
+                with self._ydl_lock:
+                    entry = self._ydl_cache.get(strategy_key)
+                    if entry is not None:
+                        created_at, inst = entry
+                        if (now - created_at) < 1800:
+                            cached_ydl = inst
+                        else:
+                            self._ydl_cache.pop(strategy_key, None)
 
-                    if "url" in info and info["url"]:
-                        self.last_stream_error = None
-                        return str(info["url"])
+                if cached_ydl is not None:
+                    info = cached_ydl.extract_info(url, download=False)
+                else:
+                    ydl = yt_dlp.YoutubeDL(ydl_opts)
+                    if type(ydl).__module__.startswith("yt_dlp"):
+                        with self._ydl_lock:
+                            self._ydl_cache[strategy_key] = (now, ydl)
+                        info = ydl.extract_info(url, download=False)
+                    else:
+                        with ydl as ctx_ydl:
+                            info = ctx_ydl.extract_info(url, download=False)
 
-                    formats = info.get("formats")
-                    if isinstance(formats, list):
-                        for fmt in reversed(formats):
-                            if isinstance(fmt, dict) and fmt.get("url"):
-                                self.last_stream_error = None
-                                return str(fmt["url"])
+                if not info or not isinstance(info, dict):
+                    continue
+
+                if "url" in info and info["url"]:
+                    self.last_stream_error = None
+                    return str(info["url"])
+
+                formats = info.get("formats")
+                if isinstance(formats, list):
+                    for fmt in reversed(formats):
+                        if isinstance(fmt, dict) and fmt.get("url"):
+                            self.last_stream_error = None
+                            return str(fmt["url"])
 
             except Exception as exc:
+                with self._ydl_lock:
+                    self._ydl_cache.pop(strategy_key, None)
                 raw = str(exc).strip()
                 cleaned = re.sub(r"^(ERROR:\s*)?(\[[^\]]+\]\s*)?([a-zA-Z0-9_-]+:\s*)?", "", raw).strip()
                 cleaned = cleaned.split("Use --cookies-from-browser")[0].strip()
