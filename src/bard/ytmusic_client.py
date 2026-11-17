@@ -572,10 +572,10 @@ class YTMusicClient:
                 js_runtimes[rt] = {}
                 break
 
-        # Extraction strategies: try default clients first; fallback to android/ios/tv if challenged
+        # Extraction strategies: try fast android client first; fallback to web/ios/tv if challenged
         strategies: List[Optional[List[str]]] = [
-            None,
             ["android"],
+            None,
             ["ios"],
             ["tv"],
         ]
