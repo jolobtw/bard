@@ -276,33 +276,40 @@ def test_get_stream_url_passes_zen_cookies_from_config(tmp_path):
 
     with patch("bard.ytmusic_client._resolve_zen_profiles_dir", return_value="C:/Users/test/AppData/Roaming/zen/Profiles"), \
          patch("bard.ytmusic_client.yt_dlp.YoutubeDL") as MockYDL:
-        mock_ydl_instance = MagicMock()
-        mock_ydl_instance.extract_info.return_value = {"url": "https://googlevideo.com/age_ok"}
-        MockYDL.return_value.__enter__.return_value = mock_ydl_instance
+        anon_instance = MagicMock()
+        anon_instance.extract_info.side_effect = Exception("ERROR: [youtube] age123: Sign in to confirm your age.")
+        auth_instance = MagicMock()
+        auth_instance.extract_info.return_value = {"url": "https://googlevideo.com/age_ok"}
+        MockYDL.return_value.__enter__.side_effect = [anon_instance, auth_instance]
 
         client = YTMusicClient(config=cfg)
         url = client.get_stream_url("age123")
 
         assert url == "https://googlevideo.com/age_ok"
-        ydl_opts = MockYDL.call_args[0][0]
-        assert ydl_opts["cookiesfrombrowser"] == ("firefox", "C:/Users/test/AppData/Roaming/zen/Profiles")
-        if "js_runtimes" in ydl_opts:
-            assert ydl_opts["remote_components"] == ["ejs:github"]
+        assert MockYDL.call_count == 2
+        anon_opts = MockYDL.call_args_list[0][0][0]
+        auth_opts = MockYDL.call_args_list[1][0][0]
+        assert "cookiesfrombrowser" not in anon_opts
+        assert auth_opts["cookiesfrombrowser"] == ("firefox", "C:/Users/test/AppData/Roaming/zen/Profiles")
+        if "js_runtimes" in auth_opts:
+            assert auth_opts["remote_components"] == ["ejs:github"]
 
 
 def test_get_stream_url_passes_cookie_file():
     with patch("bard.ytmusic_client.yt_dlp.YoutubeDL") as MockYDL:
-        mock_ydl_instance = MagicMock()
-        mock_ydl_instance.extract_info.return_value = {"url": "https://googlevideo.com/file_ok"}
-        MockYDL.return_value.__enter__.return_value = mock_ydl_instance
+        anon_instance = MagicMock()
+        anon_instance.extract_info.side_effect = Exception("ERROR: [youtube] vid123: Sign in to confirm your age.")
+        auth_instance = MagicMock()
+        auth_instance.extract_info.return_value = {"url": "https://googlevideo.com/file_ok"}
+        MockYDL.return_value.__enter__.side_effect = [anon_instance, auth_instance]
 
         client = YTMusicClient(cookies_file="/tmp/yt_cookies.txt")
         url = client.get_stream_url("vid123")
 
         assert url == "https://googlevideo.com/file_ok"
-        ydl_opts = MockYDL.call_args[0][0]
-        assert "cookiefile" in ydl_opts
-        assert ydl_opts["cookiefile"].endswith("yt_cookies.txt")
+        auth_opts = MockYDL.call_args_list[1][0][0]
+        assert "cookiefile" in auth_opts
+        assert auth_opts["cookiefile"].endswith("yt_cookies.txt")
 
 
 def test_init_with_auth_header():

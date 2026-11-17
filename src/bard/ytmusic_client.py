@@ -665,18 +665,26 @@ class YTMusicClient:
             cookies_file=self.cookies_file,
         )
 
-        # Extraction strategies: try default clients first; fallback to android/ios/tv if challenged
-        strategies: List[Optional[List[str]]] = [
-            None,
-            ["android"],
-            ["ios"],
-            ["tv"],
+        # Extraction strategies:
+        # 1. Fast unauthenticated android client first (~1s, no JS/cookie overhead)
+        # 2. If cookies are configured, authenticated web client (with JS solver) for age-gated/challenged tracks
+        # 3. Remaining unauthenticated fallbacks (default web, ios, tv)
+        strategies: List[Tuple[Optional[List[str]], bool]] = [
+            (["android"], False),
         ]
+        if cookie_opts:
+            strategies.append((None, True))
+        strategies.extend([
+            (None, False),
+            (["ios"], False),
+            (["tv"], False),
+        ])
 
         last_error_msg: Optional[str] = None
 
-        for client in strategies:
-            strategy_key = ",".join(client) if client else "default"
+        for client, use_cookies in strategies:
+            client_label = ",".join(client) if client else "default"
+            strategy_key = f"{client_label}:{'auth' if use_cookies else 'anon'}"
             ydl_opts: Dict[str, Any] = {
                 "format": "bestaudio/best",
                 "quiet": True,
@@ -684,9 +692,9 @@ class YTMusicClient:
                 "noplaylist": True,
                 "socket_timeout": 10,
             }
-            if cookie_opts:
+            if use_cookies and cookie_opts:
                 ydl_opts.update(cookie_opts)
-            if js_runtimes:
+            if js_runtimes and (use_cookies or client is None):
                 ydl_opts["js_runtimes"] = js_runtimes
                 ydl_opts["remote_components"] = ["ejs:github"]
             if client:
@@ -742,7 +750,8 @@ class YTMusicClient:
                 else:
                     last_error_msg = raw
 
-                # If the video is members-only, private, geo-blocked, removed, or age-gated, further clients won't help
+                # If the video is members-only, private, geo-blocked, or removed, further clients won't help.
+                # For age-gated videos, stop immediately unless we still have an authenticated strategy to try.
                 lower_msg = raw.lower()
                 is_age_gated = any(
                     k in lower_msg
@@ -752,7 +761,7 @@ class YTMusicClient:
                     last_error_msg = (
                         f"{last_error_msg} (run 'bard --cookies zen' or configure cookies in config.json)"
                     )
-                if is_age_gated or any(
+                if (is_age_gated and (use_cookies or not cookie_opts)) or any(
                     k in lower_msg
                     for k in [
                         "members-only",

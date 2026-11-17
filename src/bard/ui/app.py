@@ -583,12 +583,8 @@ class BardApp(App):
             self.stage_widget.focus()
 
     def action_quit(self) -> None:
-        """Pause playback, terminate audio player cleanly, and exit."""
+        """Terminate audio player cleanly and exit."""
         if self.player:
-            try:
-                self.player.pause()
-            except Exception:
-                pass
             try:
                 self.player.close()
             except Exception:
