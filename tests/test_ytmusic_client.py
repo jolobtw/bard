@@ -252,6 +252,57 @@ def test_get_stream_url_empty_id():
     assert client.get_stream_url(None) is None
 
 
+def test_get_stream_url_fast_fails_on_age_gate():
+    with patch("bard.ytmusic_client.yt_dlp.YoutubeDL") as MockYDL:
+        mock_ydl_instance = MagicMock()
+        mock_ydl_instance.extract_info.side_effect = Exception(
+            "ERROR: [youtube] age123: Sign in to confirm your age. This video may be inappropriate for some users."
+        )
+        MockYDL.return_value.__enter__.return_value = mock_ydl_instance
+
+        client = YTMusicClient()
+        url = client.get_stream_url("age123")
+        assert url is None
+        assert mock_ydl_instance.extract_info.call_count == 1
+        assert "confirm your age" in (client.last_stream_error or "").lower()
+        assert "bard --cookies zen" in (client.last_stream_error or "")
+
+
+def test_get_stream_url_passes_zen_cookies_from_config(tmp_path):
+    from bard.config import BardConfig
+
+    cfg = BardConfig(config_path=tmp_path / "config.json")
+    cfg.cookies_from_browser = "zen"
+
+    with patch("bard.ytmusic_client._resolve_zen_profiles_dir", return_value="C:/Users/test/AppData/Roaming/zen/Profiles"), \
+         patch("bard.ytmusic_client.yt_dlp.YoutubeDL") as MockYDL:
+        mock_ydl_instance = MagicMock()
+        mock_ydl_instance.extract_info.return_value = {"url": "https://googlevideo.com/age_ok"}
+        MockYDL.return_value.__enter__.return_value = mock_ydl_instance
+
+        client = YTMusicClient(config=cfg)
+        url = client.get_stream_url("age123")
+
+        assert url == "https://googlevideo.com/age_ok"
+        ydl_opts = MockYDL.call_args[0][0]
+        assert ydl_opts["cookiesfrombrowser"] == ("firefox", "C:/Users/test/AppData/Roaming/zen/Profiles")
+
+
+def test_get_stream_url_passes_cookie_file():
+    with patch("bard.ytmusic_client.yt_dlp.YoutubeDL") as MockYDL:
+        mock_ydl_instance = MagicMock()
+        mock_ydl_instance.extract_info.return_value = {"url": "https://googlevideo.com/file_ok"}
+        MockYDL.return_value.__enter__.return_value = mock_ydl_instance
+
+        client = YTMusicClient(cookies_file="/tmp/yt_cookies.txt")
+        url = client.get_stream_url("vid123")
+
+        assert url == "https://googlevideo.com/file_ok"
+        ydl_opts = MockYDL.call_args[0][0]
+        assert "cookiefile" in ydl_opts
+        assert ydl_opts["cookiefile"].endswith("yt_cookies.txt")
+
+
 def test_init_with_auth_header():
     with patch("bard.ytmusic_client.YTMusic") as MockYTMusic:
         client = YTMusicClient(auth_header="custom_auth_token")

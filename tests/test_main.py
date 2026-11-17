@@ -117,3 +117,31 @@ def test_main_cli_arg_version(capsys):
     captured = capsys.readouterr()
     assert "Bard v0.2.0" in captured.out or "Bard v0.2.0" in captured.err
 
+
+def test_configure_cookies_zen_and_clear(tmp_path):
+    from bard.__main__ import configure_cookies
+    from bard.config import BardConfig
+
+    cfg = BardConfig(config_path=tmp_path / "config.json")
+    with patch("bard.ytmusic_client._resolve_zen_profiles_dir", return_value="C:/zen/Profiles"):
+        assert configure_cookies("zen", config=cfg) is True
+
+    reloaded = BardConfig(config_path=tmp_path / "config.json")
+    assert reloaded.cookies_from_browser == "zen"
+    assert reloaded.cookies_file == ""
+
+    assert configure_cookies("clear", config=reloaded) is True
+    cleared = BardConfig(config_path=tmp_path / "config.json")
+    assert cleared.cookies_from_browser == ""
+    assert cleared.cookies_profile == ""
+    assert cleared.cookies_file == ""
+
+
+def test_main_cli_arg_cookies():
+    with patch("sys.argv", ["bard", "--cookies", "zen"]), \
+         patch("bard.__main__.configure_cookies", return_value=True) as mock_cookies, \
+         pytest.raises(SystemExit) as exc_info:
+        main()
+    mock_cookies.assert_called_once_with("zen", profile="")
+    assert exc_info.value.code == 0
+

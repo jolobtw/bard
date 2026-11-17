@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 import sys
 import webbrowser
 from typing import Optional, Sequence
@@ -112,6 +113,85 @@ def run_device_logout(oauth: Optional[YTMusicOAuth] = None) -> bool:
     return True
 
 
+def configure_cookies(
+    target: str,
+    profile: str = "",
+    config: Optional[BardConfig] = None,
+) -> bool:
+    """Persist browser or cookies.txt configuration for yt-dlp stream extraction."""
+    if config is None:
+        config = BardConfig()
+
+    cleaned = (target or "").strip()
+    if cleaned.lower() in {"clear", "none", "off"}:
+        config.cookies_from_browser = ""
+        config.cookies_profile = ""
+        config.cookies_file = ""
+        config.save()
+        console.print(
+            Panel(
+                "[#FF7A00]✦ Cookie configuration cleared.[/]\n\n"
+                "[#A6ADC8]yt-dlp will extract streams without browser cookies.",
+                border_style="#FF7A00",
+                title="✦ ❖ BARD COOKIES ❖ ✦",
+            )
+        )
+        return True
+
+    expanded = Path(cleaned).expanduser()
+    looks_like_file = (
+        cleaned.lower().endswith(".txt")
+        or expanded.is_file()
+        or "/" in cleaned
+        or "\\" in cleaned
+    )
+
+    if looks_like_file:
+        config.cookies_file = str(expanded)
+        config.cookies_from_browser = ""
+        config.cookies_profile = ""
+        config.save()
+        exists_note = (
+            "[#00E5FF]File found.[/]"
+            if expanded.exists()
+            else "[#FFD166]Warning: file does not exist yet at that path.[/]"
+        )
+        console.print(
+            Panel(
+                f"[bold #00E5FF]✦ Cookie file configured:[/] {expanded}\n{exists_note}",
+                border_style="#00E5FF",
+                title="✦ ❖ BARD COOKIES ❖ ✦",
+            )
+        )
+        return True
+
+    config.cookies_from_browser = cleaned
+    config.cookies_profile = (profile or "").strip()
+    config.cookies_file = ""
+    config.save()
+
+    detail = f"Browser: [bold]{cleaned}[/]"
+    if config.cookies_profile:
+        detail += f" (profile: [bold]{config.cookies_profile}[/])"
+    if cleaned.lower() == "zen":
+        from bard.ytmusic_client import _resolve_zen_profiles_dir
+
+        zen_dir = _resolve_zen_profiles_dir()
+        if zen_dir:
+            detail += f"\n[#A6ADC8]Detected Zen profile dir: {zen_dir}[/]"
+        else:
+            detail += "\n[#FFD166]Warning: Zen profile directory was not found on this machine.[/]"
+
+    console.print(
+        Panel(
+            f"[bold #00E5FF]✦ Browser cookies configured![/]\n\n{detail}",
+            border_style="#00E5FF",
+            title="✦ ❖ BARD COOKIES ❖ ✦",
+        )
+    )
+    return True
+
+
 def main(argv: Optional[Sequence[str]] = None) -> None:
     """Main launcher."""
     parser = argparse.ArgumentParser(
@@ -134,6 +214,17 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         action="store_true",
         help="Log out and clear stored YouTube Music credentials",
     )
+    parser.add_argument(
+        "--cookies",
+        metavar="BROWSER_OR_FILE",
+        help="Browser name (e.g. zen, firefox, chrome), path to cookies.txt, or 'clear'",
+    )
+    parser.add_argument(
+        "--cookies-profile",
+        default="",
+        metavar="PROFILE",
+        help="Optional browser profile name or path to pair with --cookies",
+    )
 
     args = parser.parse_args(argv)
 
@@ -147,11 +238,16 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         sys.exit(0 if success else 1)
         return
 
+    if args.cookies is not None:
+        success = configure_cookies(args.cookies, profile=args.cookies_profile)
+        sys.exit(0 if success else 1)
+        return
+
     config = BardConfig()
     if not ensure_audio_engine():
         sys.exit(1)
 
-    client = YTMusicClient()
+    client = YTMusicClient(config=config)
     player = AudioPlayer()
 
     app = None

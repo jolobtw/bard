@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 import random
 import re
 import shutil
-from typing import Any, Dict, List, Optional, Union
+import sys
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import requests
 import yt_dlp
@@ -163,6 +165,68 @@ def _parse_tile_track(tr: Dict[str, Any], default_album: str = "") -> Optional[T
     )
 
 
+def _resolve_zen_profiles_dir() -> Optional[str]:
+    """Return the Zen Browser profile directory if present on this OS."""
+    candidates: List[Path] = []
+    if sys.platform == "win32" or os.name == "nt":
+        appdata = os.environ.get("APPDATA")
+        base = Path(appdata) if appdata else Path.home() / "AppData" / "Roaming"
+        candidates.append(base / "zen" / "Profiles")
+    elif sys.platform == "darwin":
+        candidates.append(Path.home() / "Library" / "Application Support" / "zen" / "Profiles")
+    else:
+        candidates.append(Path.home() / ".zen")
+
+    for path in candidates:
+        if path.exists():
+            return str(path)
+    return None
+
+
+def _build_cookie_opts(
+    cookies_from_browser: str = "",
+    cookies_profile: str = "",
+    cookies_file: str = "",
+) -> Dict[str, Any]:
+    """Build yt-dlp cookie options from browser name/profile or cookies.txt path."""
+    file_path = (cookies_file or "").strip()
+    if file_path:
+        return {"cookiefile": str(Path(file_path).expanduser())}
+
+    raw_browser = (cookies_from_browser or "").strip()
+    if not raw_browser:
+        return {}
+
+    profile = (cookies_profile or "").strip()
+    browser = raw_browser
+    if ":" in raw_browser and not profile:
+        browser_part, profile_part = raw_browser.split(":", 1)
+        browser = browser_part.strip()
+        profile = profile_part.strip()
+
+    browser_lower = browser.lower()
+    if browser_lower == "zen":
+        zen_dir = _resolve_zen_profiles_dir()
+        if profile:
+            profile_path = Path(profile).expanduser()
+            if profile_path.is_absolute() or os.sep in profile or "/" in profile:
+                resolved_profile: Optional[str] = str(profile_path)
+            elif zen_dir:
+                resolved_profile = str(Path(zen_dir) / profile)
+            else:
+                resolved_profile = profile
+        else:
+            resolved_profile = zen_dir
+
+        if not resolved_profile:
+            logger.warning("Zen Browser profile directory was not found; skipping browser cookies")
+            return {}
+        return {"cookiesfrombrowser": ("firefox", resolved_profile)}
+
+    spec: Tuple[Optional[str], ...] = (browser_lower, profile) if profile else (browser_lower,)
+    return {"cookiesfrombrowser": spec}
+
+
 class YTMusicClient:
     """Client for YouTube Music catalog search, personal library, and audio stream extraction."""
 
@@ -171,12 +235,31 @@ class YTMusicClient:
         auth_header: Optional[str] = None,
         oauth: Optional[YTMusicOAuth] = None,
         token_path: Optional[Union[Path, str]] = None,
+        config: Optional[Any] = None,
+        cookies_from_browser: Optional[str] = None,
+        cookies_profile: Optional[str] = None,
+        cookies_file: Optional[str] = None,
     ):
         self.auth_header = auth_header
         self._oauth = oauth
         self._authenticated = False
         self._anon_instance: Optional[YTMusic] = None
         self.last_stream_error: Optional[str] = None
+        self.cookies_from_browser: str = (
+            cookies_from_browser
+            if cookies_from_browser is not None
+            else str(getattr(config, "cookies_from_browser", "") or "")
+        )
+        self.cookies_profile: str = (
+            cookies_profile
+            if cookies_profile is not None
+            else str(getattr(config, "cookies_profile", "") or "")
+        )
+        self.cookies_file: str = (
+            cookies_file
+            if cookies_file is not None
+            else str(getattr(config, "cookies_file", "") or "")
+        )
 
         if auth_header:
             try:
@@ -572,6 +655,12 @@ class YTMusicClient:
                 js_runtimes[rt] = {}
                 break
 
+        cookie_opts = _build_cookie_opts(
+            cookies_from_browser=self.cookies_from_browser,
+            cookies_profile=self.cookies_profile,
+            cookies_file=self.cookies_file,
+        )
+
         # Extraction strategies: try default clients first; fallback to android/ios/tv if challenged
         strategies: List[Optional[List[str]]] = [
             None,
@@ -589,6 +678,8 @@ class YTMusicClient:
                 "no_warnings": True,
                 "noplaylist": True,
             }
+            if cookie_opts:
+                ydl_opts.update(cookie_opts)
             if js_runtimes:
                 ydl_opts["js_runtimes"] = js_runtimes
             if client:
@@ -621,9 +712,26 @@ class YTMusicClient:
                 else:
                     last_error_msg = raw
 
-                # If the video is members-only, private, geo-blocked, or removed, further clients won't help
+                # If the video is members-only, private, geo-blocked, removed, or age-gated, further clients won't help
                 lower_msg = raw.lower()
-                if any(k in lower_msg for k in ["members-only", "join this channel", "private", "not available in your country", "removed by the uploader"]):
+                is_age_gated = any(
+                    k in lower_msg
+                    for k in ["confirm your age", "age-restricted", "inappropriate for some users"]
+                )
+                if is_age_gated and not cookie_opts:
+                    last_error_msg = (
+                        f"{last_error_msg} (run 'bard --cookies zen' or configure cookies in config.json)"
+                    )
+                if is_age_gated or any(
+                    k in lower_msg
+                    for k in [
+                        "members-only",
+                        "join this channel",
+                        "private",
+                        "not available in your country",
+                        "removed by the uploader",
+                    ]
+                ):
                     break
 
         if last_error_msg:

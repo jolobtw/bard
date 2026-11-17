@@ -32,6 +32,9 @@ class BardConfig:
         self.token_expiry: float = 0.0
         self.ytmusic_client_id: str = ""
         self.ytmusic_client_secret: str = ""
+        self.cookies_from_browser: str = ""
+        self.cookies_profile: str = ""
+        self.cookies_file: str = ""
 
         self.load()
 
@@ -51,6 +54,9 @@ class BardConfig:
             self.token_expiry = data.get("token_expiry", self.token_expiry)
             self.ytmusic_client_id = data.get("ytmusic_client_id", self.ytmusic_client_id)
             self.ytmusic_client_secret = data.get("ytmusic_client_secret", self.ytmusic_client_secret)
+            self.cookies_from_browser = data.get("cookies_from_browser", self.cookies_from_browser)
+            self.cookies_profile = data.get("cookies_profile", self.cookies_profile)
+            self.cookies_file = data.get("cookies_file", self.cookies_file)
         except Exception:
             pass
 
@@ -66,6 +72,9 @@ class BardConfig:
             "token_expiry": self.token_expiry,
             "ytmusic_client_id": self.ytmusic_client_id,
             "ytmusic_client_secret": self.ytmusic_client_secret,
+            "cookies_from_browser": self.cookies_from_browser,
+            "cookies_profile": self.cookies_profile,
+            "cookies_file": self.cookies_file,
         }
         with open(self.config_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
