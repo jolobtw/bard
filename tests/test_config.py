@@ -22,21 +22,3 @@ def test_config_load_and_save(tmp_path: Path):
     assert loaded.client_id == "test_client_id_123"
     assert loaded.access_token == "acc_123"
     assert loaded.refresh_token == "ref_456"
-
-
-def test_config_cookie_fields_persist(tmp_path: Path):
-    config_file = tmp_path / "config.json"
-    cfg = BardConfig(config_path=config_file)
-    assert cfg.cookies_from_browser == ""
-    assert cfg.cookies_profile == ""
-    assert cfg.cookies_file == ""
-
-    cfg.cookies_from_browser = "zen"
-    cfg.cookies_profile = "Default"
-    cfg.cookies_file = "/tmp/cookies.txt"
-    cfg.save()
-
-    loaded = BardConfig(config_path=config_file)
-    assert loaded.cookies_from_browser == "zen"
-    assert loaded.cookies_profile == "Default"
-    assert loaded.cookies_file == "/tmp/cookies.txt"

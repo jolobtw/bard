@@ -3,15 +3,11 @@
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 import random
 import re
 import shutil
-import sys
-import threading
-import time
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Union
 
 import requests
 import yt_dlp
@@ -167,68 +163,6 @@ def _parse_tile_track(tr: Dict[str, Any], default_album: str = "") -> Optional[T
     )
 
 
-def _resolve_zen_profiles_dir() -> Optional[str]:
-    """Return the Zen Browser profile directory if present on this OS."""
-    candidates: List[Path] = []
-    if sys.platform == "win32" or os.name == "nt":
-        appdata = os.environ.get("APPDATA")
-        base = Path(appdata) if appdata else Path.home() / "AppData" / "Roaming"
-        candidates.append(base / "zen" / "Profiles")
-    elif sys.platform == "darwin":
-        candidates.append(Path.home() / "Library" / "Application Support" / "zen" / "Profiles")
-    else:
-        candidates.append(Path.home() / ".zen")
-
-    for path in candidates:
-        if path.exists():
-            return str(path)
-    return None
-
-
-def _build_cookie_opts(
-    cookies_from_browser: str = "",
-    cookies_profile: str = "",
-    cookies_file: str = "",
-) -> Dict[str, Any]:
-    """Build yt-dlp cookie options from browser name/profile or cookies.txt path."""
-    file_path = (cookies_file or "").strip()
-    if file_path:
-        return {"cookiefile": str(Path(file_path).expanduser())}
-
-    raw_browser = (cookies_from_browser or "").strip()
-    if not raw_browser:
-        return {}
-
-    profile = (cookies_profile or "").strip()
-    browser = raw_browser
-    if ":" in raw_browser and not profile:
-        browser_part, profile_part = raw_browser.split(":", 1)
-        browser = browser_part.strip()
-        profile = profile_part.strip()
-
-    browser_lower = browser.lower()
-    if browser_lower == "zen":
-        zen_dir = _resolve_zen_profiles_dir()
-        if profile:
-            profile_path = Path(profile).expanduser()
-            if profile_path.is_absolute() or os.sep in profile or "/" in profile:
-                resolved_profile: Optional[str] = str(profile_path)
-            elif zen_dir:
-                resolved_profile = str(Path(zen_dir) / profile)
-            else:
-                resolved_profile = profile
-        else:
-            resolved_profile = zen_dir
-
-        if not resolved_profile:
-            logger.warning("Zen Browser profile directory was not found; skipping browser cookies")
-            return {}
-        return {"cookiesfrombrowser": ("firefox", resolved_profile)}
-
-    spec: Tuple[Optional[str], ...] = (browser_lower, profile) if profile else (browser_lower,)
-    return {"cookiesfrombrowser": spec}
-
-
 class YTMusicClient:
     """Client for YouTube Music catalog search, personal library, and audio stream extraction."""
 
@@ -237,33 +171,12 @@ class YTMusicClient:
         auth_header: Optional[str] = None,
         oauth: Optional[YTMusicOAuth] = None,
         token_path: Optional[Union[Path, str]] = None,
-        config: Optional[Any] = None,
-        cookies_from_browser: Optional[str] = None,
-        cookies_profile: Optional[str] = None,
-        cookies_file: Optional[str] = None,
     ):
         self.auth_header = auth_header
         self._oauth = oauth
         self._authenticated = False
         self._anon_instance: Optional[YTMusic] = None
         self.last_stream_error: Optional[str] = None
-        self._ydl_cache: Dict[str, Tuple[float, Any]] = {}
-        self._ydl_lock = threading.Lock()
-        self.cookies_from_browser: str = (
-            cookies_from_browser
-            if cookies_from_browser is not None
-            else str(getattr(config, "cookies_from_browser", "") or "")
-        )
-        self.cookies_profile: str = (
-            cookies_profile
-            if cookies_profile is not None
-            else str(getattr(config, "cookies_profile", "") or "")
-        )
-        self.cookies_file: str = (
-            cookies_file
-            if cookies_file is not None
-            else str(getattr(config, "cookies_file", "") or "")
-        )
 
         if auth_header:
             try:
@@ -659,88 +572,46 @@ class YTMusicClient:
                 js_runtimes[rt] = {}
                 break
 
-        cookie_opts = _build_cookie_opts(
-            cookies_from_browser=self.cookies_from_browser,
-            cookies_profile=self.cookies_profile,
-            cookies_file=self.cookies_file,
-        )
-
-        # Extraction strategies:
-        # 1. Fast unauthenticated android client first (~1s, no JS/cookie overhead)
-        # 2. If cookies are configured, authenticated web client (with JS solver) for age-gated/challenged tracks
-        # 3. Remaining unauthenticated fallbacks (default web, ios, tv)
-        strategies: List[Tuple[Optional[List[str]], bool]] = [
-            (["android"], False),
+        # Extraction strategies: try default clients first; fallback to android/ios/tv if challenged
+        strategies: List[Optional[List[str]]] = [
+            None,
+            ["android"],
+            ["ios"],
+            ["tv"],
         ]
-        if cookie_opts:
-            strategies.append((None, True))
-        strategies.extend([
-            (None, False),
-            (["ios"], False),
-            (["tv"], False),
-        ])
 
         last_error_msg: Optional[str] = None
 
-        for client, use_cookies in strategies:
-            client_label = ",".join(client) if client else "default"
-            strategy_key = f"{client_label}:{'auth' if use_cookies else 'anon'}"
+        for client in strategies:
             ydl_opts: Dict[str, Any] = {
                 "format": "bestaudio/best",
                 "quiet": True,
                 "no_warnings": True,
                 "noplaylist": True,
-                "socket_timeout": 10,
             }
-            if use_cookies and cookie_opts:
-                ydl_opts.update(cookie_opts)
-            if js_runtimes and (use_cookies or client is None):
+            if js_runtimes:
                 ydl_opts["js_runtimes"] = js_runtimes
-                ydl_opts["remote_components"] = ["ejs:github"]
             if client:
                 ydl_opts["extractor_args"] = {"youtube": {"player_client": client}}
 
             try:
-                now = time.monotonic()
-                cached_ydl = None
-                with self._ydl_lock:
-                    entry = self._ydl_cache.get(strategy_key)
-                    if entry is not None:
-                        created_at, inst = entry
-                        if (now - created_at) < 1800:
-                            cached_ydl = inst
-                        else:
-                            self._ydl_cache.pop(strategy_key, None)
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    if not info or not isinstance(info, dict):
+                        continue
 
-                if cached_ydl is not None:
-                    info = cached_ydl.extract_info(url, download=False)
-                else:
-                    ydl = yt_dlp.YoutubeDL(ydl_opts)
-                    if type(ydl).__module__.startswith("yt_dlp"):
-                        with self._ydl_lock:
-                            self._ydl_cache[strategy_key] = (now, ydl)
-                        info = ydl.extract_info(url, download=False)
-                    else:
-                        with ydl as ctx_ydl:
-                            info = ctx_ydl.extract_info(url, download=False)
+                    if "url" in info and info["url"]:
+                        self.last_stream_error = None
+                        return str(info["url"])
 
-                if not info or not isinstance(info, dict):
-                    continue
-
-                if "url" in info and info["url"]:
-                    self.last_stream_error = None
-                    return str(info["url"])
-
-                formats = info.get("formats")
-                if isinstance(formats, list):
-                    for fmt in reversed(formats):
-                        if isinstance(fmt, dict) and fmt.get("url"):
-                            self.last_stream_error = None
-                            return str(fmt["url"])
+                    formats = info.get("formats")
+                    if isinstance(formats, list):
+                        for fmt in reversed(formats):
+                            if isinstance(fmt, dict) and fmt.get("url"):
+                                self.last_stream_error = None
+                                return str(fmt["url"])
 
             except Exception as exc:
-                with self._ydl_lock:
-                    self._ydl_cache.pop(strategy_key, None)
                 raw = str(exc).strip()
                 cleaned = re.sub(r"^(ERROR:\s*)?(\[[^\]]+\]\s*)?([a-zA-Z0-9_-]+:\s*)?", "", raw).strip()
                 cleaned = cleaned.split("Use --cookies-from-browser")[0].strip()
@@ -750,20 +621,14 @@ class YTMusicClient:
                 else:
                     last_error_msg = raw
 
-                # If the video is members-only, private, geo-blocked, or removed, further clients won't help.
-                # For age-gated videos, stop immediately unless we still have an authenticated strategy to try.
+                # If the video is members-only, private, geo-blocked, removed, or age-gated, further clients won't help
                 lower_msg = raw.lower()
-                is_age_gated = any(
-                    k in lower_msg
-                    for k in ["confirm your age", "age-restricted", "inappropriate for some users"]
-                )
-                if is_age_gated and not cookie_opts:
-                    last_error_msg = (
-                        f"{last_error_msg} (run 'bard --cookies zen' or configure cookies in config.json)"
-                    )
-                if (is_age_gated and (use_cookies or not cookie_opts)) or any(
+                if any(
                     k in lower_msg
                     for k in [
+                        "confirm your age",
+                        "age-restricted",
+                        "inappropriate for some users",
                         "members-only",
                         "join this channel",
                         "private",
