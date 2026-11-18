@@ -81,13 +81,13 @@ def test_spectrum_deck_play_state_gating_and_rapid_toggle():
             assert "STANDBY · AWAITING RESONANCE" in rendered_idle
             assert "60Hz SUB-CORE" not in rendered_idle
 
-            # Playing: spectrum active
+            # Playing: spectrum active (no header banner noise)
             deck.set_state(is_playing=True, has_track=True, progress_ms=10000, duration_ms=120000)
             await pilot.pause()
             rendered_playing = str(deck.query_one("#spectrum-well").render())
             assert "STANDBY · AWAITING RESONANCE" not in rendered_playing
             assert "60Hz SUB-CORE" in rendered_playing
-            assert "RESONATING" in str(deck.query_one("#spectrum-header").render())
+            assert len(deck.query("#spectrum-header")) == 0
 
             # Rapid toggle back to paused clears immediately
             deck.set_state(is_playing=False, has_track=True, progress_ms=10000, duration_ms=120000)

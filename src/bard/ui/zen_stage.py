@@ -20,7 +20,6 @@ from bard.ui.stage_widgets import (
     ArtifactPanel,
     ControlsPanel,
     QueuePanel,
-    StatusFooter,
     VolumeBar,
 )
 
@@ -31,7 +30,6 @@ __all__ = [
     "QueuePanel",
     "ControlsPanel",
     "VolumeBar",
-    "StatusFooter",
     "ZenStage",
     "format_ms",
     "render_arcane_bar",
@@ -124,7 +122,6 @@ class ZenStage(Widget):
                     on_cycle_device=self._handle_cycle_device,
                     id="controls-panel",
                 )
-            yield StatusFooter(id="status-footer")
 
     def on_mount(self) -> None:
         self.refresh_stage()
@@ -223,7 +220,6 @@ class ZenStage(Widget):
                 self.query_one("#artifact-panel", ArtifactPanel).set_audio_info(self._audio_info)
             except Exception:
                 pass
-            self._sync_footer()
 
     def set_queue(self, tracks: Sequence[Track], current_index: int) -> None:
         """Synchronize the QueuePanel with BardApp's active queue."""
@@ -392,27 +388,6 @@ class ZenStage(Widget):
         except Exception:
             pass
 
-    def _sync_footer(self) -> None:
-        if not self.is_mounted:
-            return
-        try:
-            footer = self.query_one("#status-footer", StatusFooter)
-        except Exception:
-            return
-        if not self.playback_data:
-            footer.set_status("READY // Press [Tab] to explore or [Space] to play")
-            return
-        is_playing = bool(self.playback_data.get("is_playing", False))
-        state_word = "RESONATING" if is_playing else "STANDBY"
-        codec = str(self._audio_info.get("codec") or "").strip().upper()
-        rate = self._audio_info.get("samplerate")
-        if codec and rate:
-            footer.set_status(f"{state_word} // {codec} {int(rate) / 1000:g}kHz")
-        elif codec:
-            footer.set_status(f"{state_word} // {codec}")
-        else:
-            footer.set_status(f"{state_word} // Press [Tab] to explore")
-
     def refresh_stage(self) -> None:
         """Re-render all stage sub-panels."""
         if not self.is_mounted:
@@ -434,4 +409,3 @@ class ZenStage(Widget):
         except Exception:
             pass
         self._sync_controls()
-        self._sync_footer()

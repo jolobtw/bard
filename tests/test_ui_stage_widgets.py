@@ -1,4 +1,4 @@
-"""Tests for bottom command deck widgets: ArtifactPanel, QueuePanel, ControlsPanel, StatusFooter."""
+"""Tests for bottom command deck widgets: ArtifactPanel, QueuePanel, ControlsPanel."""
 
 import asyncio
 from textual.app import App, ComposeResult
@@ -194,31 +194,9 @@ def test_controls_panel_non_focusable_buttons_volume_and_output_route():
     asyncio.run(_run())
 
 
-def test_status_footer_truthful_content():
-    from bard.ui.stage_widgets import StatusFooter
-
-    class TestApp(App):
-        def compose(self) -> ComposeResult:
-            yield StatusFooter()
-
-    async def _run():
-        app = TestApp()
-        async with app.run_test(size=(100, 5)) as pilot:
-            footer = app.query_one(StatusFooter)
-            footer.set_status("RESONATING // OPUS 48kHz")
-            await pilot.pause()
-            text = str(footer.render())
-            assert "BARD // UTF-8" in text
-            assert "24-BIT TRUECOLOR" in text
-            assert "RESONATING // OPUS 48kHz" in text
-            assert "/dev/pts/0" not in text
-
-    asyncio.run(_run())
-
-
 def test_markup_escaping_in_dynamic_track_and_device_strings():
     from bard.ui.header import ArcaneHeader
-    from bard.ui.stage_widgets import ArtifactPanel, QueuePanel, StatusFooter, _OutputRouteBox
+    from bard.ui.stage_widgets import ArtifactPanel, QueuePanel, _OutputRouteBox
 
     tricky_title = "Broken [/] Title [Official Audio]"
     tricky_artist = "Artist [Feat. X][/]"
@@ -230,7 +208,6 @@ def test_markup_escaping_in_dynamic_track_and_device_strings():
             yield ArtifactPanel()
             yield QueuePanel()
             yield _OutputRouteBox()
-            yield StatusFooter()
 
     async def _run():
         app = TestApp()
@@ -238,7 +215,6 @@ def test_markup_escaping_in_dynamic_track_and_device_strings():
             art = app.query_one(ArtifactPanel)
             q = app.query_one(QueuePanel)
             out = app.query_one(_OutputRouteBox)
-            ftr = app.query_one(StatusFooter)
 
             t = Track("id1", tricky_title, tricky_artist, "Album [Deluxe][/]", 200, "")
             q.set_queue([t], 0)
@@ -247,14 +223,12 @@ def test_markup_escaping_in_dynamic_track_and_device_strings():
                 queue_pos=(1, 1),
             )
             out.set_device(tricky_device)
-            ftr.set_status("PLAYING // [OPUS][/]")
             await pilot.pause()
 
             assert "[Official Audio]" in art.query_one("#track-title", Static).render().plain
             assert "[/]" in art.query_one("#track-title", Static).render().plain
             assert "[Official Audio]" in q.query_one("#queue-list").render().plain
             assert "[ASIO][/]" in out.render().plain
-            assert "[/]" in ftr.render().plain
             assert "[ASIO][/]" in app.query_one(ArcaneHeader).render().plain
 
     asyncio.run(_run())
@@ -270,7 +244,7 @@ def test_output_route_box_two_lines_and_compact_80x24_no_clipping():
             yield ZenStage()
 
     async def _run():
-        # Standard size: _OutputRouteBox content height >= 2 so device line is visible
+        # Standard size: _OutputRouteBox content height >= 2 and no header/footer noise
         app_std = TestApp()
         async with app_std.run_test(size=(110, 40)) as pilot:
             stage = app_std.query_one(ZenStage)
@@ -279,18 +253,16 @@ def test_output_route_box_two_lines_and_compact_80x24_no_clipping():
             out_box = stage.query_one("#output-route")
             assert out_box.content_size.height >= 2
             assert "Speakers (Realtek)" in out_box.render().plain
+            assert len(stage.query("#spectrum-header")) == 0
+            assert len(stage.query("#status-footer")) == 0
 
-        # Compact 80x24: key controls, queue footer SEL, and spectrum header fit cleanly
+        # Compact 80x24: key controls and queue footer SEL fit cleanly
         app_compact = TestApp()
         async with app_compact.run_test(size=(80, 24)) as pilot:
             stage = app_compact.query_one(ZenStage)
             stage.set_queue([Track("1", "Track One", "Artist", "Album", 120, "")], 0)
             stage.update_playback({"id": "1", "title": "Track One", "artist": "Artist", "duration_ms": 120000, "is_playing": True, "album_art_url": "", "volume": 70})
             await pilot.pause()
-
-            spec_hdr = stage.query_one("#spectrum-header", Static)
-            assert "RESONATING" in spec_hdr.render().plain
-            assert len(spec_hdr.render().plain.splitlines()) == 1
 
             q_ftr = stage.query_one("#queue-footer", Static)
             assert "SEL:" in q_ftr.render().plain

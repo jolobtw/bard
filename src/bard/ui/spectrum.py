@@ -244,13 +244,6 @@ class SpectrumDeck(Widget):
         border: double {BORDER_AMBER};
     }}
 
-    #spectrum-header {{
-        width: 100%;
-        height: 1;
-        background: {BG_PANEL};
-        padding: 0 1;
-    }}
-
     #spectrum-well {{
         width: 100%;
         height: 9;
@@ -276,13 +269,11 @@ class SpectrumDeck(Widget):
         self._anim_timer: Any = None
 
     def compose(self) -> ComposeResult:
-        yield Static(id="spectrum-header")
         yield Static(id="spectrum-well")
         yield Static(id="spectrum-divider")
         yield SeekBar(on_seek=self.on_seek, id="progress-bar")
 
     def on_mount(self) -> None:
-        self._render_header()
         self._render_well()
         self._render_divider()
 
@@ -292,7 +283,6 @@ class SpectrumDeck(Widget):
     def on_resize(self, event: Any = None) -> None:
         if self.is_mounted:
             self._adjust_well_height()
-            self._render_header()
             self._render_well()
             self._render_divider()
 
@@ -332,34 +322,6 @@ class SpectrumDeck(Widget):
         w = self.size.width or (self.app.size.width if self.app else 100)
         inner = max(20, w - 2)
         return min(28, max(8, inner // 2))
-
-    def _render_header(self) -> None:
-        if not self.is_mounted:
-            return
-        try:
-            hdr = self.query_one("#spectrum-header", Static)
-        except Exception:
-            return
-        w = max(24, hdr.size.width or (self.size.width or 100) - 2)
-        left = "BARD // CENTER-OUTWARD HARMONIC SPECTRUM"
-        if self.is_playing:
-            right = f"[{TEXT_MUTED}]ORIGIN: 0Hz CENTER · STATE:[/] [bold {AMBER_CORE}]● RESONATING[/]"
-            right_plain = "ORIGIN: 0Hz CENTER · STATE: ● RESONATING"
-        else:
-            right = f"[{TEXT_MUTED}]ORIGIN: 0Hz CENTER · STATE: ○ STANDBY[/]"
-            right_plain = "ORIGIN: 0Hz CENTER · STATE: ○ STANDBY"
-
-        if len(left) + len(right_plain) + 1 > w:
-            left = "BARD // SPECTRUM"
-            if self.is_playing:
-                right = f"[bold {AMBER_CORE}]● RESONATING[/]"
-                right_plain = "● RESONATING"
-            else:
-                right = f"[{TEXT_MUTED}]○ STANDBY[/]"
-                right_plain = "○ STANDBY"
-
-        gap = max(1, w - len(left) - len(right_plain))
-        hdr.update(Text.from_markup(f"[bold {AMBER_GLOW}]{left}[/]{' ' * gap}{right}"), layout=False)
 
     def _render_divider(self) -> None:
         if not self.is_mounted:
@@ -420,7 +382,6 @@ class SpectrumDeck(Widget):
             self._stop_timer()
             self._bins = []
         if changed or not self.is_playing:
-            self._render_header()
             self._render_divider()
             self._render_well()
 

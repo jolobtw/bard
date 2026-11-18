@@ -1,4 +1,4 @@
-"""Bottom three-column command deck widgets and StatusFooter for Bard."""
+"""Bottom three-column command deck widgets for Bard."""
 
 from __future__ import annotations
 
@@ -1155,36 +1155,3 @@ class ControlsPanel(Widget):
                 self.query_one("#output-route", _OutputRouteBox).set_device(label)
             except Exception:
                 pass
-
-
-class StatusFooter(Widget):
-    """Single-line truthful terminal/Bard status footer."""
-
-    DEFAULT_CSS = f"""
-    StatusFooter {{
-        width: 100%;
-        height: 1;
-        background: {BG_OBSIDIAN};
-        padding: 0 1;
-    }}
-    """
-
-    def __init__(self, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
-        self.status_text: str = "READY // Press [Tab] to explore or [Space] to play"
-
-    def set_status(self, text: str) -> None:
-        cleaned = (text or "").strip() or "READY // Press [Tab] to explore or [Space] to play"
-        if cleaned != self.status_text:
-            self.status_text = cleaned
-            self.refresh()
-
-    def render(self) -> Text:
-        w = max(30, self.size.width or 100)
-        left = "BARD // UTF-8 • 24-BIT TRUECOLOR"
-        right = self.status_text
-        if len(left) + len(right) + 2 > w:
-            avail = max(10, w - len(left) - 2)
-            right = right[: max(1, avail - 1)] + "…"
-        gap = max(1, w - len(left) - len(right))
-        return Text.from_markup(f"[{TEXT_MUTED}]{left}[/]{' ' * gap}[{AMBER_GLOW}]{markup_escape(right)}[/]")
