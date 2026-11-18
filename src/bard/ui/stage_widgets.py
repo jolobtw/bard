@@ -26,7 +26,6 @@ from bard.ui.palette import (
     BORDER_SLATE,
     TEXT_MAIN,
     TEXT_MUTED,
-    track_rune,
 )
 from bard.ui.spectrum import format_ms, render_arcane_bar
 
@@ -198,11 +197,10 @@ class ArtifactPanel(Widget):
             self._marquee_offset = 0
             self._marquee_pause = 8
 
-        rune = track_rune(str(self.playback_data.get("id", "")))
         visible = markup_escape(self._slice_marquee(self._full_title, width))
         try:
             self.query_one("#track-title", Static).update(
-                Text.from_markup(f"[bold {AMBER_CORE}]{rune}[/] [bold {AMBER_PEAK}]{visible}[/]"),
+                Text.from_markup(f"[bold {AMBER_PEAK}]{visible}[/]"),
                 layout=False,
             )
         except Exception:
@@ -269,7 +267,7 @@ class ArtifactPanel(Widget):
 
         if not self.playback_data:
             self._full_title = ""
-            title_w.update(Text.from_markup(f"[bold {AMBER_PEAK}]ᛟ Select Music[/]"), layout=False)
+            title_w.update(Text.from_markup(f"[bold {AMBER_PEAK}]Select Music[/]"), layout=False)
             meta_w.update(Text.from_markup(f"[{TEXT_MAIN}]Press [bold {AMBER_PEAK}]\\[Tab][/bold {AMBER_PEAK}] to explore[/]"), layout=False)
             src_w.update("", layout=False)
             self._render_codec_badge()
@@ -278,7 +276,6 @@ class ArtifactPanel(Widget):
         title = str(self.playback_data.get("title") or "Unknown")
         artist = str(self.playback_data.get("artist") or "Unknown Artist")
         album = str(self.playback_data.get("album") or "").strip()
-        rune = track_rune(str(self.playback_data.get("id") or ""))
 
         if title != self._full_title:
             self._full_title = title
@@ -288,7 +285,7 @@ class ArtifactPanel(Widget):
 
         tw = self._title_width()
         visible = markup_escape(self._slice_marquee(title, tw))
-        title_w.update(Text.from_markup(f"[bold {AMBER_CORE}]{rune}[/] [bold {AMBER_PEAK}]{visible}[/]"), layout=False)
+        title_w.update(Text.from_markup(f"[bold {AMBER_PEAK}]{visible}[/]"), layout=False)
 
         artist_trunc = artist if len(artist) <= w else artist[: max(1, w - 1)] + "…"
         meta_w.update(Text.from_markup(f"[{TEXT_MAIN}]{markup_escape(artist_trunc)}[/]"), layout=False)

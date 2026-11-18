@@ -21,7 +21,9 @@ def test_artifact_panel_empty_active_codec_and_marquee():
             panel = app.query_one(ArtifactPanel)
             await pilot.pause()
 
-            assert "Select Music" in str(panel.query_one("#track-title", Static).render())
+            title_plain = panel.query_one("#track-title", Static).render().plain
+            assert title_plain.strip() == "Select Music"
+            assert not any(r in title_plain for r in ("ᛟ", "ᛉ", "☉", "ᛗ", "ᛜ"))
             assert "Press [Tab] to explore" in str(panel.query_one("#track-meta", Static).render())
             assert "ARCANE RESONANCE" not in str(panel.query_one("#art-box", Static).render())
             assert "--/--" in str(panel.query_one("#art-header", Static).render())
@@ -50,8 +52,9 @@ def test_artifact_panel_empty_active_codec_and_marquee():
             assert "48kHz" not in codec_text
             assert "Synthwave" in codec_text
 
-            # Marquee scrolls long title
-            t_before = str(panel.query_one("#track-title", Static).render())
+            # Marquee scrolls long title with no rune prefix
+            t_before = panel.query_one("#track-title", Static).render().plain
+            assert not any(r in t_before for r in ("ᛟ", "ᛉ", "☉", "ᛗ", "ᛜ"))
             panel._marquee_pause = 0
             panel._advance_title_marquee()
             t_after = str(panel.query_one("#track-title", Static).render())
