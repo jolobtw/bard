@@ -28,6 +28,9 @@ from bard.ui.palette import (
 SPECTRUM_BLOCKS = (" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█")
 _GRAD_START_RGB = hex_to_rgb("#FF4500")
 _GRAD_END_RGB = hex_to_rgb(AMBER_PEAK)
+_SPEC_DEEP_RGB = hex_to_rgb(AMBER_DEEP)
+_SPEC_CORE_RGB = hex_to_rgb(AMBER_CORE)
+_SPEC_PEAK_RGB = hex_to_rgb(AMBER_PEAK)
 
 
 def format_ms(ms: int) -> str:
@@ -78,10 +81,10 @@ def generate_simulated_bins(
     denom = max(1, n_bins - 1)
     for i in range(n_bins):
         norm = i / denom
-        # Center sub-bass spine has higher base envelope, tapering toward 16kHz wings
+        # Center sub-bass spine has higher base envelope, tapering toward outer wings
         envelope = 0.25 + 0.72 * math.exp(-2.6 * (norm ** 1.35))
-        wave_a = 0.5 + 0.5 * math.sin(phase * 3.1 - i * 0.42)
-        wave_b = 0.5 + 0.5 * math.sin(phase * 5.7 + i * 0.73)
+        wave_a = 0.5 + 0.5 * math.sin(phase * 3.1 - norm * 11.5)
+        wave_b = 0.5 + 0.5 * math.sin(phase * 5.7 + norm * 19.5)
         pulse = 0.5 + 0.5 * math.sin(phase * 2.0 - norm * 2.2)
         raw = envelope * (0.45 * wave_a + 0.30 * wave_b + 0.25 * pulse)
         target = max(0.04, min(1.0, raw))
@@ -101,18 +104,15 @@ def mirror_spectrum_bins(half_levels: Sequence[float]) -> List[float]:
 
 
 def _row_color(row_from_bottom: int, rows: int) -> str:
-    """Return Amber gradient hex color for row index counted from the bottom (0-indexed)."""
-    if row_from_bottom >= rows - 2:
-        return AMBER_PEAK
-    if row_from_bottom >= rows - 5:
-        return AMBER_GLOW
-    if row_from_bottom >= 2:
-        return AMBER_CORE
-    return AMBER_DEEP
+    """Return smooth interpolated Amber gradient hex color for row index counted from bottom."""
+    t = max(0.0, min(1.0, row_from_bottom / max(1, rows - 1)))
+    if t <= 0.45:
+        return interpolate_rgb(_SPEC_DEEP_RGB, _SPEC_CORE_RGB, t / 0.45)
+    return interpolate_rgb(_SPEC_CORE_RGB, _SPEC_PEAK_RGB, (t - 0.45) / 0.55)
 
 
 def render_spectrum_lines(half_levels: Sequence[float], rows: int = 8) -> List[str]:
-    """Render center-outward spectrum columns as top-to-bottom Rich markup lines."""
+    """Render center-outward spectrum columns with 1-space bar gaps as top-to-bottom Rich lines."""
     rows = max(3, rows)
     full_levels = mirror_spectrum_bins(half_levels)
     if not full_levels:
@@ -133,7 +133,7 @@ def render_spectrum_lines(half_levels: Sequence[float], rows: int = 8) -> List[s
                 row_cells.append(" ")
             else:
                 row_cells.append(f"[{color}]{ch}[/]")
-        lines.append("".join(row_cells))
+        lines.append(" ".join(row_cells))
     return lines
 
 
@@ -315,9 +315,13 @@ class SpectrumDeck(Widget):
         self._render_well()
 
     def _half_bin_count(self) -> int:
-        w = self.size.width or (self.app.size.width if self.app else 100)
-        inner = max(20, w - 2)
-        return min(28, max(8, inner // 2))
+        well_w = 0
+        try:
+            well_w = self.query_one("#spectrum-well", Static).size.width
+        except Exception:
+            pass
+        w = well_w or self.size.width or (self.app.size.width - 4 if self.app else 100)
+        return max(6, (max(24, w) + 1) // 4)
 
     def _render_divider(self) -> None:
         if not self.is_mounted:

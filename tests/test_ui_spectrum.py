@@ -53,14 +53,42 @@ def test_mirror_and_generate_simulated_bins():
 
 
 def test_render_spectrum_lines_gradient_and_blocks():
+    import re
     from bard.ui.spectrum import render_spectrum_lines
 
     lines = render_spectrum_lines([1.0, 0.5], rows=8)
     assert len(lines) == 8
-    # Top row has peak color, bottom row has deep amber color
+    # Top row has peak color, bottom row has deep amber color, with smooth per-row gradient (> 4 colors)
     assert "#FFD28A" in lines[0]
     assert "#8F3900" in lines[-1]
     assert "█" in lines[-1]
+    colors = {re.search(r"#[0-9A-F]{6}", line).group(0) for line in lines}
+    assert len(colors) == 8
+    # Bottom row has 4 bars separated by 1-space gaps: "█ █ █ █"
+    plain_bottom = re.sub(r"\[/?[^\]]*\]", "", lines[-1])
+    assert plain_bottom == "█ █ █ █"
+
+
+def test_spectrum_deck_expands_full_width():
+    from bard.ui.spectrum import SpectrumDeck
+
+    class TestApp(App):
+        def compose(self) -> ComposeResult:
+            yield SpectrumDeck()
+
+    async def _run():
+        app = TestApp()
+        async with app.run_test(size=(140, 20)) as pilot:
+            deck = app.query_one(SpectrumDeck)
+            deck.set_state(is_playing=True, has_track=True, progress_ms=0, duration_ms=100000)
+            await pilot.pause()
+            well_w = deck.query_one("#spectrum-well").size.width
+            bottom_line = deck.query_one("#spectrum-well").render().plain.splitlines()[-1]
+            # Spans nearly the full well width (exceeding old 56-col cap)
+            assert len(bottom_line) >= well_w - 4
+            assert len(bottom_line) > 56
+
+    asyncio.run(_run())
 
 
 def test_spectrum_deck_play_state_gating_and_rapid_toggle():
