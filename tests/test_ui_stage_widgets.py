@@ -69,6 +69,50 @@ def test_artifact_panel_empty_active_codec_and_marquee():
     asyncio.run(_run())
 
 
+def test_artifact_panel_displays_art_after_empty_mount():
+    import io
+    from unittest.mock import MagicMock, patch
+    from PIL import Image
+    from bard.ui.stage_widgets import ArtifactPanel
+
+    img = Image.new("RGB", (16, 16), color=(255, 123, 0))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.content = buf.getvalue()
+
+    class TestApp(App):
+        def compose(self) -> ComposeResult:
+            yield ArtifactPanel()
+
+    async def _run():
+        app = TestApp()
+        with patch("bard.art.requests.get", return_value=resp):
+            async with app.run_test(size=(40, 32)) as pilot:
+                panel = app.query_one(ArtifactPanel)
+                await pilot.pause()
+                art_box = panel.query_one("#art-box", Static)
+                assert art_box.size.height == 0
+
+                panel.set_track(
+                    {
+                        "id": "trk_art",
+                        "title": "With Art",
+                        "artist": "Artist",
+                        "album": "Album",
+                        "album_art_url": "https://example.com/test_cover_after_empty.jpg",
+                    },
+                    queue_pos=(1, 1),
+                )
+                await pilot.pause()
+                assert art_box.size.width >= 14
+                assert art_box.size.height >= 5
+                assert "▁" in art_box.render().plain
+
+    asyncio.run(_run())
+
+
 def test_queue_panel_filter_cursor_empty_match_and_click():
     from bard.ui.stage_widgets import QueuePanel
 

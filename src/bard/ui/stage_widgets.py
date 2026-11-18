@@ -101,6 +101,7 @@ class ArtifactPanel(Widget):
         self._last_art_url: str = "__UNSET__"
         self._last_dims: Optional[Tuple[int, int]] = None
         self._cached_art_ansi: str = ""
+        self._last_art_drawn: str = "__UNSET__"
         self._full_title: str = ""
         self._marquee_offset: int = 0
         self._marquee_pause: int = 8
@@ -255,12 +256,16 @@ class ArtifactPanel(Widget):
                 self._last_dims = (art_w, art_h)
                 self._cached_art_ansi = render_album_art(art_url, width=art_w, height=art_h)
             framed = frame_art_ansi(self._cached_art_ansi, border_hex=BORDER_AMBER, bg_hex=BG_PANEL)
-            art_w_widget.update(Text.from_ansi(framed), layout=False)
+            if framed != self._last_art_drawn:
+                self._last_art_drawn = framed
+                art_w_widget.update(Text.from_ansi(framed), layout=True)
         else:
             self._last_art_url = ""
             self._last_dims = (art_w, art_h)
             self._cached_art_ansi = ""
-            art_w_widget.update("", layout=False)
+            if self._last_art_drawn != "":
+                self._last_art_drawn = ""
+                art_w_widget.update("", layout=True)
 
         if not self.playback_data:
             self._full_title = ""
