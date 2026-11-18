@@ -9,5 +9,6 @@ build/
 bin/
 scratch/
 .superpowers/
+.worktrees/
 *.png
 
