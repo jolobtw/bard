@@ -104,16 +104,16 @@ def test_spectrum_deck_play_state_gating_and_rapid_toggle():
             deck = app.query_one(SpectrumDeck)
             await pilot.pause()
 
-            # Paused / idle: strictly dormant banner, no spectrum axis or bars
+            # Paused / idle: subtle dormant banner, no spectrum bars
             rendered_idle = str(deck.query_one("#spectrum-well").render())
-            assert "STANDBY · AWAITING RESONANCE" in rendered_idle
-            assert "60Hz SUB-CORE" not in rendered_idle
+            assert "Awaiting Resonance" in rendered_idle
+            assert not any(ch in rendered_idle for ch in "▁▂▃▄▅▆▇█")
 
             # Playing: spectrum active (no header banner noise and no kHz axis)
             deck.set_state(is_playing=True, has_track=True, progress_ms=10000, duration_ms=120000)
             await pilot.pause()
             rendered_playing = str(deck.query_one("#spectrum-well").render())
-            assert "STANDBY · AWAITING RESONANCE" not in rendered_playing
+            assert "Awaiting Resonance" not in rendered_playing
             assert "kHz" not in rendered_playing
             assert "60Hz" not in rendered_playing
             assert any(ch in rendered_playing for ch in "▁▂▃▄▅▆▇█")
@@ -129,7 +129,7 @@ def test_spectrum_deck_play_state_gating_and_rapid_toggle():
             deck.set_state(is_playing=False, has_track=True, progress_ms=10000, duration_ms=120000)
             await pilot.pause()
             rendered_paused = str(deck.query_one("#spectrum-well").render())
-            assert "STANDBY · AWAITING RESONANCE" in rendered_paused
+            assert "Awaiting Resonance" in rendered_paused
             assert not any(ch in rendered_paused for ch in "▁▂▃▄▅▆▇█")
 
     asyncio.run(_run())

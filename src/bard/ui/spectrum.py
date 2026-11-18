@@ -318,10 +318,7 @@ class SpectrumDeck(Widget):
             return
 
         if not self.is_playing:
-            banner = (
-                f"[{BORDER_AMBER}]───[/] [bold {AMBER_PEAK}]◈ STANDBY · AWAITING RESONANCE ◈[/] [{BORDER_AMBER}]───[/]\n"
-                f"[{TEXT_MUTED}]PRESS [bold {TEXT_MAIN}][SPACE][/bold {TEXT_MAIN}] OR CLICK [bold {AMBER_CORE}][▶ PLAY][/bold {AMBER_CORE}] TO IGNITE SPECTRAL TELEMETRY[/]"
-            )
+            banner = f"[{BORDER_SLATE}]───────────[/]  [{TEXT_MUTED}]Awaiting Resonance[/]  [{BORDER_SLATE}]───────────[/]"
             well.update(Text.from_markup(banner), layout=False)
             return
 

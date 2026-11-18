@@ -23,7 +23,7 @@ def test_artifact_panel_empty_active_codec_and_marquee():
 
             assert "Select Music" in str(panel.query_one("#track-title", Static).render())
             assert "Press [Tab] to explore" in str(panel.query_one("#track-meta", Static).render())
-            assert "ARCANE RESONANCE" in str(panel.query_one("#art-box", Static).render())
+            assert "ARCANE RESONANCE" not in str(panel.query_one("#art-box", Static).render())
             assert "--/--" in str(panel.query_one("#art-header", Static).render())
 
             long_title = "An Extraordinary Symphony of Arcane Echoes and Shadows"

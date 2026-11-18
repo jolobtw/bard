@@ -49,7 +49,8 @@ def test_zen_stage_empty_and_active_state_rendering():
 
             title = stage.query_one("#track-title", Static)
             assert "Select Music" in str(title.render())
-            assert "STANDBY · AWAITING RESONANCE" in str(stage.query_one("#spectrum-well", Static).render())
+            assert "Awaiting Resonance" in str(stage.query_one("#spectrum-well", Static).render())
+            assert "ARCANE RESONANCE" not in str(stage.query_one("#art-box", Static).render())
 
             stage.update_playback({
                 "id": "track_1",
@@ -69,14 +70,12 @@ def test_zen_stage_empty_and_active_state_rendering():
             spec_plain = str(stage.query_one("#spectrum-well", Static).render())
             assert any(ch in spec_plain for ch in "▁▂▃▄▅▆▇█")
             assert "kHz" not in spec_plain
-            art_plain = str(stage.query_one("#art-box", Static).render())
-            assert "▁" in art_plain and "▔" in art_plain
-            assert "▕" in art_plain and "▏" in art_plain
+            assert "ARCANE RESONANCE" not in str(stage.query_one("#art-box", Static).render())
 
             stage.update_playback(None)
             await pilot.pause()
             assert "Select Music" in str(title.render())
-            assert "STANDBY · AWAITING RESONANCE" in str(stage.query_one("#spectrum-well", Static).render())
+            assert "Awaiting Resonance" in str(stage.query_one("#spectrum-well", Static).render())
 
     asyncio.run(_test())
 

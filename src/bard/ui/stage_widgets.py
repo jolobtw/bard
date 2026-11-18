@@ -11,7 +11,7 @@ from textual.containers import Horizontal, Vertical
 from textual.widget import Widget
 from textual.widgets import Input, Static
 
-from bard.art import frame_art_ansi, render_album_art, render_sigil_art
+from bard.art import frame_art_ansi, render_album_art
 from bard.models import Track
 from bard.ui.palette import (
     AMBER_CORE,
@@ -249,16 +249,18 @@ class ArtifactPanel(Widget):
 
         art_w, art_h = self.get_art_dimensions()
         art_url = str(self.playback_data.get("album_art_url", "")) if self.playback_data else ""
-        if art_url != self._last_art_url or self._last_dims != (art_w, art_h) or not self._cached_art_ansi:
-            self._last_art_url = art_url
-            self._last_dims = (art_w, art_h)
-            if art_url:
+        if art_url:
+            if art_url != self._last_art_url or self._last_dims != (art_w, art_h) or not self._cached_art_ansi:
+                self._last_art_url = art_url
+                self._last_dims = (art_w, art_h)
                 self._cached_art_ansi = render_album_art(art_url, width=art_w, height=art_h)
-            else:
-                self._cached_art_ansi = render_sigil_art(width=art_w, height=art_h)
-
-        framed = frame_art_ansi(self._cached_art_ansi, border_hex=BORDER_AMBER, bg_hex=BG_PANEL)
-        art_w_widget.update(Text.from_ansi(framed), layout=False)
+            framed = frame_art_ansi(self._cached_art_ansi, border_hex=BORDER_AMBER, bg_hex=BG_PANEL)
+            art_w_widget.update(Text.from_ansi(framed), layout=False)
+        else:
+            self._last_art_url = ""
+            self._last_dims = (art_w, art_h)
+            self._cached_art_ansi = ""
+            art_w_widget.update("", layout=False)
 
         if not self.playback_data:
             self._full_title = ""
