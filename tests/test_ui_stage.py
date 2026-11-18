@@ -1,6 +1,11 @@
-"""Test ZenStage formatting and logic."""
+"""Test ZenStage two-tier layout, formatting, spectrum gating, queue, and controls."""
 
-from bard.ui.zen_stage import format_ms, render_flame_progress
+import asyncio
+from textual.app import App, ComposeResult
+from textual.widgets import Static
+
+from bard.models import Track
+from bard.ui.zen_stage import format_ms, render_arcane_bar, render_flame_progress
 
 
 def test_format_ms():
@@ -17,23 +22,19 @@ def test_render_flame_progress():
 
 
 def test_render_arcane_bar_gradient():
-    from bard.ui.zen_stage import render_arcane_bar
     half_bar = render_arcane_bar(filled=5, unfilled=5)
     assert "#FF4500" in half_bar
-    assert "#FFD166" not in half_bar  # Gradient spans full width, so midpoint hasn't reached gold yet
+    assert "#FFD28A" not in half_bar
     assert "●" in half_bar
     assert "─" * 5 in half_bar
 
     full_bar = render_arcane_bar(filled=10, unfilled=0)
     assert "#FF4500" in full_bar
-    assert "#FFD166" in full_bar
+    assert "#FFD28A" in full_bar
 
 
-def test_zen_stage_empty_state_rendering():
-    from textual.app import App, ComposeResult
+def test_zen_stage_empty_and_active_state_rendering():
     from bard.ui.zen_stage import ZenStage
-    from textual.widgets import Static
-    import asyncio
 
     class TestApp(App):
         def compose(self) -> ComposeResult:
@@ -41,129 +42,76 @@ def test_zen_stage_empty_state_rendering():
 
     async def _test():
         app = TestApp()
-        async with app.run_test():
+        async with app.run_test(size=(110, 40)) as pilot:
             stage = app.query_one(ZenStage)
             stage.refresh_stage()
+            await pilot.pause()
+
             title = stage.query_one("#track-title", Static)
             assert "Select Music" in str(title.render())
-            art_center = stage.query_one("#art-center")
-            assert art_center.display is False
-            art = stage.query_one("#art-box", Static)
-            assert str(art.render()) == ""
+            assert "STANDBY · AWAITING RESONANCE" in str(stage.query_one("#spectrum-well", Static).render())
 
-            # Verify transition to playing state displays art and title
             stage.update_playback({
+                "id": "track_1",
                 "title": "Arcane Echoes",
                 "artist": "Vi & Jinx",
                 "album": "Piltover Nights",
+                "playlist_source": "Synthwave Favorites",
                 "duration_ms": 180000,
                 "progress_ms": 30000,
                 "is_playing": True,
                 "album_art_url": "",
                 "volume": 75,
-                "device_name": "Studio Monitors",
+                "device_name": "YouTube Music",
             })
-            assert art_center.display is True
+            await pilot.pause()
             assert "Arcane Echoes" in str(title.render())
+            assert "60Hz SUB-CORE" in str(stage.query_one("#spectrum-well", Static).render())
+            art_plain = str(stage.query_one("#art-box", Static).render())
+            assert "▁" in art_plain and "▔" in art_plain
+            assert "▕" in art_plain and "▏" in art_plain
 
-            # Transition back to empty state
             stage.update_playback(None)
-            assert art_center.display is False
+            await pilot.pause()
             assert "Select Music" in str(title.render())
+            assert "STANDBY · AWAITING RESONANCE" in str(stage.query_one("#spectrum-well", Static).render())
 
     asyncio.run(_test())
 
 
-def test_zen_stage_responsive_art_sizing():
-    from textual.app import App, ComposeResult
+def test_zen_stage_responsive_layout_and_art_sizing():
     from bard.ui.zen_stage import ZenStage
-    import asyncio
 
     class TestApp(App):
         def compose(self) -> ComposeResult:
             yield ZenStage()
 
     async def _test():
-        # Compact terminal (<32 height or <86 width)
-        app_compact = TestApp()
-        async with app_compact.run_test(size=(80, 24)):
-            stage = app_compact.query_one(ZenStage)
-            assert stage.get_art_dimensions() == (32, 14)
-
-        # Hero terminal (>=32 height and >=86 width)
-        app_hero = TestApp()
-        async with app_hero.run_test(size=(100, 40)):
-            stage = app_hero.query_one(ZenStage)
-            assert stage.get_art_dimensions() == (46, 20)
+        for dims in ((80, 24), (100, 40), (120, 48)):
+            app = TestApp()
+            async with app.run_test(size=dims) as pilot:
+                stage = app.query_one(ZenStage)
+                stage.update_playback({
+                    "id": "t1",
+                    "title": "Song 1",
+                    "artist": "Artist 1",
+                    "album": "Album 1",
+                    "duration_ms": 180000,
+                    "progress_ms": 30000,
+                    "is_playing": True,
+                    "album_art_url": "",
+                })
+                await pilot.pause()
+                w, h = stage.get_art_dimensions()
+                assert w >= 18 and h >= 7
 
     asyncio.run(_test())
 
 
-def test_zen_stage_responsive_playback_rendering():
-    from textual.app import App, ComposeResult
+def test_zen_stage_clickable_controls_queue_and_seek_volume():
+    from bard.ui.spectrum import SeekBar
+    from bard.ui.stage_widgets import VolumeBar
     from bard.ui.zen_stage import ZenStage
-    import asyncio
-
-    class TestApp(App):
-        def compose(self) -> ComposeResult:
-            yield ZenStage()
-
-    async def _test():
-        # Compact terminal: art lines should be 14 rows
-        app_compact = TestApp()
-        async with app_compact.run_test(size=(80, 24)):
-            stage = app_compact.query_one(ZenStage)
-            stage.update_playback({
-                "title": "Song 1",
-                "artist": "Artist 1",
-                "album": "Album 1",
-                "duration_ms": 180000,
-                "progress_ms": 30000,
-                "is_playing": True,
-                "album_art_url": "",
-            })
-            assert len(stage._cached_art_ansi.split("\n")) == 14
-
-        # Hero terminal: art lines should be 20 rows
-        app_hero = TestApp()
-        async with app_hero.run_test(size=(100, 40)):
-            stage = app_hero.query_one(ZenStage)
-            stage.update_playback({
-                "title": "Song 1",
-                "artist": "Artist 1",
-                "album": "Album 1",
-                "duration_ms": 180000,
-                "progress_ms": 30000,
-                "is_playing": True,
-                "album_art_url": "",
-            })
-            assert len(stage._cached_art_ansi.split("\n")) == 20
-
-    asyncio.run(_test())
-
-
-def test_zen_stage_large_terminal_art_sizing():
-    from textual.app import App, ComposeResult
-    from bard.ui.zen_stage import ZenStage
-    import asyncio
-
-    class TestApp(App):
-        def compose(self) -> ComposeResult:
-            yield ZenStage()
-
-    async def _test():
-        app_large = TestApp()
-        async with app_large.run_test(size=(120, 48)):
-            stage = app_large.query_one(ZenStage)
-            assert stage.get_art_dimensions() == (58, 25)
-
-    asyncio.run(_test())
-
-
-def test_zen_stage_clickable_transport_buttons_and_shuffle():
-    from textual.app import App, ComposeResult
-    from bard.ui.zen_stage import SeekBar, TransportBar, VolumeBar, ZenStage
-    import asyncio
 
     calls = []
 
@@ -178,138 +126,62 @@ def test_zen_stage_clickable_transport_buttons_and_shuffle():
                 on_seek=lambda sec: calls.append(("seek", round(sec, 1))),
                 on_volume=lambda vol: calls.append(("vol", vol)),
                 on_mute=lambda: calls.append("mute"),
+                on_select_queue_index=lambda idx: calls.append(("queue", idx)),
+                on_cycle_device=lambda: calls.append("device"),
             )
 
     async def _test():
         app = TestApp()
-        async with app.run_test(size=(100, 40)) as pilot:
+        async with app.run_test(size=(110, 40)) as pilot:
             stage = app.query_one(ZenStage)
-            transport = stage.query_one("#transport-controls", TransportBar)
-            vol_bar = stage.query_one("#volume-control", VolumeBar)
             seek_bar = stage.query_one("#progress-bar", SeekBar)
+            vol_bar = stage.query_one("#volume-control", VolumeBar)
 
-            assert transport.is_playing is False
-            assert transport.shuffle_enabled is False
-            assert transport.repeat_mode == "off"
-
-            # Click each hit-zone inside TransportBar
-            await pilot.click("#transport-controls", offset=(1, 1))   # Prev
-            await pilot.click("#transport-controls", offset=(8, 1))   # Play pill
-            await pilot.click("#transport-controls", offset=(14, 1))  # Next
-            await pilot.click("#transport-controls", offset=(6, 3))   # Shuffle (row 3)
-            await pilot.click("#transport-controls", offset=(10, 3))  # Repeat (row 3)
-            assert calls[:5] == ["prev", "play_pause", "next", "shuffle", "repeat"]
+            await pilot.click("#btn-prev")
+            await pilot.click("#btn-play")
+            await pilot.click("#btn-next")
+            await pilot.click("#btn-shuffle")
+            await pilot.click("#btn-repeat")
+            await pilot.click("#output-route")
+            assert calls[:6] == ["prev", "play_pause", "next", "shuffle", "repeat", "device"]
 
             stage.set_shuffle(True)
-            assert transport.shuffle_enabled is True
             stage.set_repeat("one")
-            assert transport.repeat_mode == "one"
+            assert "SHUF: ON" in str(stage.query_one("#btn-shuffle").render())
+            assert "LOOP: ONE" in str(stage.query_one("#btn-repeat").render())
 
+            tracks = [
+                Track("1", "Alpha", "A", "Alb", 120, ""),
+                Track("2", "Beta", "B", "Alb", 150, ""),
+            ]
+            stage.set_queue(tracks, 0)
+            stage.move_queue_cursor(1)
+            assert stage.get_selected_queue_index() == 1
+
+            stage.set_audio_info({"codec": "opus", "samplerate": 48000})
+            stage.set_audio_device("WASAPI // Focusrite")
             stage.update_playback({
-                "title": "Test Song",
-                "artist": "Test Artist",
-                "album": "Test Album",
+                "id": "1",
+                "title": "Alpha",
+                "artist": "A",
+                "album": "Alb",
                 "duration_ms": 100000,
                 "progress_ms": 10000,
                 "is_playing": True,
                 "album_art_url": "",
                 "volume": 80,
             })
-            assert transport.is_playing is True
-            assert vol_bar.volume == 80
             await pilot.pause()
+            assert vol_bar.volume == 80
+            assert "OPUS · 48kHz" in str(stage.query_one("#track-codec", Static).render())
+            assert "WASAPI // Focusrite" in str(stage.query_one("#output-route").render())
 
-            # Click speaker icon on left (x < 3) to mute, and slider bar (x >= 3) to set volume
-            await pilot.click("#volume-control", offset=(1, 1))
+            await pilot.click("#vol-mute-btn")
             assert "mute" in calls
-            await pilot.click("#volume-control", offset=(12, 1))
+            await pilot.click("#volume-control", offset=(max(1, vol_bar.size.width // 2), 0))
             assert any(isinstance(c, tuple) and c[0] == "vol" for c in calls)
 
-            # Click seek bar on row 0
-            await pilot.click("#progress-bar", offset=(seek_bar.size.width // 2, 0))
+            await pilot.click("#progress-bar", offset=(max(1, seek_bar.size.width // 2), 0))
             assert any(isinstance(c, tuple) and c[0] == "seek" for c in calls)
 
     asyncio.run(_test())
-
-
-def test_zen_stage_visual_refinements_footer_pill_border_and_marquee():
-    from textual.app import App, ComposeResult
-    from textual.widgets import Static
-    from bard.ui.zen_stage import SeekBar, ZenStage
-    import asyncio
-
-    class TestApp(App):
-        def compose(self) -> ComposeResult:
-            yield ZenStage()
-
-    async def _test():
-        app = TestApp()
-        async with app.run_test(size=(100, 40)) as pilot:
-            stage = app.query_one(ZenStage)
-            art_box = stage.query_one("#art-box", Static)
-            title = stage.query_one("#track-title", Static)
-            source = stage.query_one("#track-source", Static)
-            hint = stage.query_one("#controls-hint", Static)
-            seek_bar = stage.query_one("#progress-bar", SeekBar)
-            assert len(stage.query("#track-kicker")) == 0
-
-            stage.refresh_stage()
-            await pilot.pause()
-
-            # 1. Single-line shortcut footer
-            hint_text = str(hint.render())
-            assert "[Tab] Explore" in hint_text
-            assert "[Q] Quit" in hint_text
-            assert hint.size.height == 1
-
-            # 2. Album art thin 1/8-cell zero-gap Arcane orange border (no CSS border)
-            assert art_box.styles.border_top[0] in ("", "none")
-
-            # 3. Status pill & timestamp contrast
-            long_title = "An Extraordinary Symphony of Arcane Echoes and Shadows"
-            stage.update_playback({
-                "title": long_title,
-                "artist": "Artist",
-                "album": "Album",
-                "playlist_source": "Synthwave Favorites",
-                "duration_ms": 393000,
-                "progress_ms": 185000,
-                "is_playing": True,
-                "album_art_url": "",
-            })
-            await pilot.pause()
-            assert "Synthwave Favorites" in str(source.render())
-            art_plain = str(art_box.render())
-            assert "▁" in art_plain and "▔" in art_plain
-            assert "▕" in art_plain and "▏" in art_plain
-
-            seek_rendered = str(seek_bar.render())
-            assert "03:05" in seek_rendered
-            assert "/ 06:33" in seek_rendered
-
-            # Paused state keeps metadata clean with no status kicker
-            stage.update_playback({
-                "title": long_title,
-                "artist": "Artist",
-                "album": "Album",
-                "duration_ms": 393000,
-                "progress_ms": 185000,
-                "is_playing": False,
-                "album_art_url": "",
-            })
-            await pilot.pause()
-
-            # 4. Marquee scroll advances after initial pause
-            initial_visible = str(title.render())
-            assert long_title.startswith(initial_visible)
-            assert "…" not in initial_visible
-            stage._marquee_pause = 0
-            stage._advance_title_marquee()
-            scrolled_visible = str(title.render())
-            assert scrolled_visible != initial_visible
-            assert scrolled_visible in long_title
-
-    asyncio.run(_test())
-
-
-

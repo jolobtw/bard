@@ -10,5 +10,5 @@ def test_arcane_header_rendering():
     assert "BARD" in plain
     assert "v0.2.0" in plain
     assert "Arcane Music Player" in plain
-    assert "320 kbps" in plain
     assert "Playing" in plain
+    assert "320 kbps" not in plain

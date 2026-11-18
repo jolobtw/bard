@@ -2,27 +2,57 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Any, Dict, Optional
 from textual.widgets import Static
 from rich.text import Text
 
 from bard import __version__
-from bard.arcane_theme import format_rich_header, load_theme
+from bard.arcane_theme import format_rich_header
+from bard.ui.palette import (
+    AMBER_CORE,
+    AMBER_PEAK,
+    BG_ELEVATED,
+    BG_OBSIDIAN,
+    BORDER_SLATE,
+    TEXT_MAIN,
+    TEXT_MUTED,
+)
+
+_HEADER_THEME: Dict[str, Any] = {
+    "palette": {
+        "text_muted": TEXT_MUTED,
+    },
+    "header": {
+        "star_glyph": "✦",
+        "star_color": AMBER_CORE,
+        "title_glyph": "❖",
+        "title_gradient": ["#FF4500", AMBER_PEAK],
+        "separator_glyph": "❖",
+        "separator_color": TEXT_MUTED,
+        "tagline_color": TEXT_MUTED,
+        "divider_glyph": "─",
+        "divider_color": BORDER_SLATE,
+    },
+    "badges": {
+        "background": BG_ELEVATED,
+        "text_color": TEXT_MAIN,
+    },
+}
 
 
 class ArcaneHeader(Static):
-    """Renders the signature 2-row Arcane header with live badges."""
+    """Renders the compact 2-row Bard header with live playback badges."""
 
-    DEFAULT_CSS = """
-    ArcaneHeader {
+    DEFAULT_CSS = f"""
+    ArcaneHeader {{
         dock: top;
         height: 2;
         width: 100%;
-        background: #13141C;
-        color: #A6ADC8;
+        background: {BG_OBSIDIAN};
+        color: {TEXT_MAIN};
         padding: 0 1;
-        margin-bottom: 1;
-    }
+        margin-bottom: 0;
+    }}
     """
 
     def __init__(
@@ -35,7 +65,6 @@ class ArcaneHeader(Static):
         self.is_playing = is_playing
         self.device_name = device_name
         self.version = version or __version__
-        self.theme = load_theme()
 
     def update_status(self, is_playing: bool, device_name: Optional[str] = None) -> None:
         """Update playback state badges."""
@@ -45,12 +74,11 @@ class ArcaneHeader(Static):
         self.refresh()
 
     def render(self) -> Text:
-        """Render header with current badges."""
+        """Render header with truthful playback and source badges."""
         width = self.size.width or 100
-        play_badge = "󰐊 Playing" if self.is_playing else "󰏤 Paused"
+        play_badge = "▶ Playing" if self.is_playing else "❚❚ Paused"
         badges = [
-            f"󰓇 {self.device_name}",
-            "󰋋 320 kbps",
+            f"◈ {self.device_name}",
             play_badge,
         ]
         markup = format_rich_header(
@@ -58,7 +86,7 @@ class ArcaneHeader(Static):
             tagline="Arcane Music Player",
             badges=badges,
             width=width,
-            theme=self.theme,
+            theme=_HEADER_THEME,
             version=self.version,
         )
         return Text.from_markup(markup)

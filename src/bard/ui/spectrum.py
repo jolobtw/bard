@@ -226,11 +226,12 @@ class SpectrumDeck(Widget):
 
     DEFAULT_CSS = f"""
     SpectrumDeck {{
+        layout: vertical;
         width: 100%;
         height: auto;
         background: {BG_OBSIDIAN};
         border: double {BORDER_SLATE};
-        margin-bottom: 1;
+        margin-bottom: 0;
     }}
 
     SpectrumDeck.-playing {{
@@ -269,11 +270,10 @@ class SpectrumDeck(Widget):
         self._anim_timer: Any = None
 
     def compose(self) -> ComposeResult:
-        with Vertical():
-            yield Static(id="spectrum-header")
-            yield Static(id="spectrum-well")
-            yield Static(id="spectrum-divider")
-            yield SeekBar(on_seek=self.on_seek, id="progress-bar")
+        yield Static(id="spectrum-header")
+        yield Static(id="spectrum-well")
+        yield Static(id="spectrum-divider")
+        yield SeekBar(on_seek=self.on_seek, id="progress-bar")
 
     def on_mount(self) -> None:
         self._render_header()
