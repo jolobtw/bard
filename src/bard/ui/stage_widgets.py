@@ -690,7 +690,7 @@ class VolumeBar(Widget):
     VolumeBar {{
         width: 1fr;
         height: 1;
-        background: {BG_ELEVATED};
+        background: {BG_PANEL};
     }}
     """
 
@@ -759,7 +759,7 @@ class _MuteLabel(Widget):
         width: 3;
         height: 1;
         content-align: left middle;
-        background: {BG_ELEVATED};
+        background: {BG_PANEL};
     }}
     """
 
@@ -826,16 +826,11 @@ class ControlsPanel(Widget):
 
     #volume-box {{
         width: 100%;
-        height: 4;
-        background: {BG_ELEVATED};
-        border: round {BORDER_SLATE};
-        padding: 0 1;
+        height: 2;
+        background: {BG_PANEL};
+        border: none;
+        padding: 0;
         margin-top: 1;
-    }}
-
-    #volume-header-row {{
-        width: 100%;
-        height: 1;
     }}
 
     #volume-bar-row {{
@@ -843,18 +838,11 @@ class ControlsPanel(Widget):
         height: 1;
     }}
 
-    #vol-label {{
-        width: 1fr;
-        height: 1;
-        color: {TEXT_MUTED};
-    }}
-
     #vol-pct {{
-        width: 5;
+        width: 100%;
         height: 1;
-        content-align: right middle;
-        color: {AMBER_PEAK};
-        text-style: bold;
+        content-align: center middle;
+        color: {TEXT_MUTED};
     }}
 
     #controls-spacer {{
@@ -905,12 +893,10 @@ class ControlsPanel(Widget):
             yield _ClickableChip("⇄ SHUF: OFF", on_press=self.on_shuffle, id="btn-shuffle")
             yield _ClickableChip("↻ LOOP: OFF", on_press=self.on_repeat, id="btn-repeat")
         with Vertical(id="volume-box"):
-            with Horizontal(id="volume-header-row"):
-                yield Static("[ VOL ]", id="vol-label")
-                yield Static("100%", id="vol-pct")
             with Horizontal(id="volume-bar-row"):
                 yield _MuteLabel(on_mute=self.on_mute, id="vol-mute-btn")
                 yield VolumeBar(on_volume=self.on_volume, id="volume-control")
+            yield Static("100%", id="vol-pct")
         yield Static(id="controls-spacer")
         yield Static(id="controls-hint")
 
@@ -971,8 +957,8 @@ class ControlsPanel(Widget):
             t_row.styles.height = 3
             t_row.styles.margin = (1, 0, 0, 0)
             m_row.styles.height = 3
-            v_box.styles.height = 4
-            v_box.styles.border = ("round", BORDER_SLATE)
+            v_box.styles.height = 2
+            v_box.styles.border = "none"
             v_box.styles.margin = (1, 0, 0, 0)
             for c in chips:
                 c.set_compact(False)
