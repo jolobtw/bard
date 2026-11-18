@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 class BardApp(App):
     """The Arcane Terminal YouTube Music Player application."""
 
+    AUTO_FOCUS = None
+
     CSS = """
     Screen {
         background: #0D0E11;
@@ -136,13 +138,16 @@ class BardApp(App):
                     self.stage_widget.set_audio_info(info)
             if hasattr(self.player, "get_current_audio_device"):
                 cur_name = self.player.get_current_audio_device()
-                devices = self.player.get_audio_devices() if hasattr(self.player, "get_audio_devices") else []
-                label = cur_name
-                for d in devices:
-                    if d.get("name") == cur_name:
-                        label = d.get("description") or cur_name
-                        break
-                if label:
+                if isinstance(cur_name, str) and cur_name.strip():
+                    devices = self.player.get_audio_devices() if hasattr(self.player, "get_audio_devices") else []
+                    label = cur_name
+                    if isinstance(devices, list):
+                        for d in devices:
+                            if isinstance(d, dict) and d.get("name") == cur_name:
+                                desc = d.get("description")
+                                if isinstance(desc, str) and desc.strip():
+                                    label = desc
+                                break
                     self.stage_widget.set_audio_device(label)
         except Exception:
             pass
@@ -591,9 +596,11 @@ class BardApp(App):
                 curr = self.player.get_volume()
                 new_vol = min(100, curr + 5)
                 self.player.set_volume(new_vol)
+                if new_vol > 0:
+                    self._pre_mute_volume = new_vol
                 if self.stage_widget.playback_data:
                     self.stage_widget.playback_data["volume"] = new_vol
-                    self.stage_widget.refresh_stage()
+                self.stage_widget.update_volume(new_vol)
             except Exception:
                 pass
 
@@ -606,7 +613,7 @@ class BardApp(App):
                 self.player.set_volume(new_vol)
                 if self.stage_widget.playback_data:
                     self.stage_widget.playback_data["volume"] = new_vol
-                    self.stage_widget.refresh_stage()
+                self.stage_widget.update_volume(new_vol)
             except Exception:
                 pass
 
@@ -622,7 +629,7 @@ class BardApp(App):
                 pass
         if self.stage_widget.playback_data:
             self.stage_widget.playback_data["volume"] = clamped
-            self.stage_widget.update_volume(clamped)
+        self.stage_widget.update_volume(clamped)
 
     def action_toggle_mute(self) -> None:
         """Mute or restore volume."""

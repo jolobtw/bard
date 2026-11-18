@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 from textual.widgets import Static
+from rich.markup import escape as markup_escape
 from rich.text import Text
 
 from bard import __version__
@@ -78,7 +79,7 @@ class ArcaneHeader(Static):
         width = self.size.width or 100
         play_badge = "▶ Playing" if self.is_playing else "❚❚ Paused"
         badges = [
-            f"◈ {self.device_name}",
+            f"◈ {markup_escape(self.device_name)}",
             play_badge,
         ]
         markup = format_rich_header(

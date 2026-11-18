@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from rich.markup import escape as markup_escape
 from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
@@ -141,8 +142,8 @@ class ArtifactPanel(Widget):
         """Compute proportional album art size fitting inside the left column."""
         w = avail_width if avail_width is not None else (self.size.width or 36)
         h = avail_height if avail_height is not None else (self.size.height or 24)
-        art_w = max(18, min(32, w - 6))
-        art_h = max(7, min(14, h - 10))
+        art_w = max(12, min(32, w - 4))
+        art_h = max(3, min(14, h - 8))
         return (art_w, art_h)
 
     def set_track(
@@ -166,7 +167,7 @@ class ArtifactPanel(Widget):
 
     def _title_width(self) -> int:
         w = self.size.width or 36
-        return max(16, w - 6)
+        return max(12, w - 2)
 
     def _slice_marquee(self, title: str, width: int) -> str:
         if len(title) <= width:
@@ -197,7 +198,7 @@ class ArtifactPanel(Widget):
             self._marquee_pause = 8
 
         rune = track_rune(str(self.playback_data.get("id", "")))
-        visible = self._slice_marquee(self._full_title, width)
+        visible = markup_escape(self._slice_marquee(self._full_title, width))
         try:
             self.query_one("#track-title", Static).update(
                 Text.from_markup(f"[bold {AMBER_CORE}]{rune}[/] [bold {AMBER_PEAK}]{visible}[/]"),
@@ -216,14 +217,14 @@ class ArtifactPanel(Widget):
         parts: List[str] = []
         if codec and rate:
             khz = f"{int(rate) / 1000:g}kHz"
-            parts.append(f"[{codec} · {khz}]")
+            parts.append(markup_escape(f"[{codec} · {khz}]"))
         elif codec:
-            parts.append(f"[{codec}]")
+            parts.append(markup_escape(f"[{codec}]"))
         src = ""
         if self.playback_data:
             ps = str(self.playback_data.get("playlist_source") or self.playback_data.get("source") or "").strip()
             if ps:
-                src = f"[{TEXT_MUTED}]♫ {ps[:18]}[/]"
+                src = f"[{TEXT_MUTED}]♫ {markup_escape(ps[:18])}[/]"
         badge_line = f"[bold {AMBER_CORE}]{' '.join(parts)}[/]" if parts else ""
         if badge_line and src:
             codec_w.update(Text.from_markup(f"{badge_line} {src}"), layout=False)
@@ -248,12 +249,13 @@ class ArtifactPanel(Widget):
         except Exception:
             return
 
-        w = max(24, (self.size.width or 36) - 4)
+        w = max(14, self.size.width or 32)
         idx, total = self.queue_pos
         count_str = f"{idx:02d}/{total:02d}" if total > 0 and idx > 0 else "--/--"
-        gap = max(1, w - len("ARTIFACT COVER") - len(count_str))
+        hdr_label = "ARTIFACT COVER" if w >= 22 else "ARTIFACT"
+        gap = max(1, w - len(hdr_label) - len(count_str))
         hdr_w.update(
-            Text.from_markup(f"[bold {AMBER_GLOW}]ARTIFACT COVER[/]{' ' * gap}[{TEXT_MUTED}]{count_str}[/]"),
+            Text.from_markup(f"[bold {AMBER_GLOW}]{hdr_label}[/]{' ' * gap}[{TEXT_MUTED}]{count_str}[/]"),
             layout=False,
         )
         div_w.update(Text.from_markup(f"[{BORDER_SLATE}]{'─' * w}[/]"), layout=False)
@@ -274,7 +276,7 @@ class ArtifactPanel(Widget):
         if not self.playback_data:
             self._full_title = ""
             title_w.update(Text.from_markup(f"[bold {AMBER_PEAK}]ᛟ Select Music[/]"), layout=False)
-            meta_w.update(Text.from_markup(f"[{TEXT_MAIN}]Press [bold {AMBER_PEAK}][Tab][/bold {AMBER_PEAK}] to explore[/]"), layout=False)
+            meta_w.update(Text.from_markup(f"[{TEXT_MAIN}]Press [bold {AMBER_PEAK}]\\[Tab][/bold {AMBER_PEAK}] to explore[/]"), layout=False)
             src_w.update("", layout=False)
             self._render_codec_badge()
             return
@@ -291,14 +293,14 @@ class ArtifactPanel(Widget):
             self._marquee_end_pause = 0
 
         tw = self._title_width()
-        visible = self._slice_marquee(title, tw)
+        visible = markup_escape(self._slice_marquee(title, tw))
         title_w.update(Text.from_markup(f"[bold {AMBER_CORE}]{rune}[/] [bold {AMBER_PEAK}]{visible}[/]"), layout=False)
 
         artist_trunc = artist if len(artist) <= w else artist[: max(1, w - 1)] + "…"
-        meta_w.update(Text.from_markup(f"[{TEXT_MAIN}]{artist_trunc}[/]"), layout=False)
+        meta_w.update(Text.from_markup(f"[{TEXT_MAIN}]{markup_escape(artist_trunc)}[/]"), layout=False)
 
         album_trunc = album if len(album) <= w else album[: max(1, w - 1)] + "…"
-        src_w.update(Text.from_markup(f"[{TEXT_MUTED}]{album_trunc}[/]") if album_trunc else "", layout=False)
+        src_w.update(Text.from_markup(f"[{TEXT_MUTED}]{markup_escape(album_trunc)}[/]") if album_trunc else "", layout=False)
         self._render_codec_badge()
 
 
@@ -382,8 +384,7 @@ class _QueueListView(Widget):
         vis = self._visible_rows()
         slice_entries = self.entries[self._row_offset : self._row_offset + vis]
         lines: List[str] = []
-        for orig_idx, track in slice_entries:
-            row_idx = self.entries.index((orig_idx, track))
+        for row_idx, (orig_idx, track) in enumerate(slice_entries, start=self._row_offset):
             is_active = orig_idx == self.active_original_index
             is_cursor = row_idx == self.cursor_idx
             dur = format_ms((track.duration_seconds or 0) * 1000)
@@ -392,16 +393,17 @@ class _QueueListView(Widget):
 
             title_budget = max(6, w - len(prefix) - len(num) - len(dur) - 5)
             raw_title = track.title or "Unknown"
-            title = raw_title if len(raw_title) <= title_budget else raw_title[: max(1, title_budget - 1)] + "…"
-            pad = max(1, w - len(prefix) - len(num) - len(title) - len(dur) - 4)
-            row_text = f"{prefix} {num} {title}{' ' * pad}{dur} "
+            title_plain = raw_title if len(raw_title) <= title_budget else raw_title[: max(1, title_budget - 1)] + "…"
+            pad = max(1, w - len(prefix) - len(num) - len(title_plain) - len(dur) - 4)
+            title_safe = markup_escape(title_plain)
+            row_text = f"{prefix} {num} {title_safe}{' ' * pad}{dur} "
 
             if is_active:
                 lines.append(f"[on {BG_ACTIVE_AMBER} bold {AMBER_PEAK}]{row_text}[/]")
             elif is_cursor:
                 lines.append(f"[on {BG_CURSOR} bold {TEXT_MAIN}]{row_text}[/]")
             else:
-                lines.append(f"[{TEXT_MAIN}]{prefix} [{TEXT_MUTED}]{num}[/] {title}{' ' * pad}[{TEXT_MUTED}]{dur}[/] [/]")
+                lines.append(f"[{TEXT_MAIN}]{prefix} [{TEXT_MUTED}]{num}[/] {title_safe}{' ' * pad}[{TEXT_MUTED}]{dur}[/] [/]")
         return Text.from_markup("\n".join(lines))
 
 
@@ -539,18 +541,24 @@ class QueuePanel(Widget):
     def _render_chrome(self) -> None:
         if not self.is_mounted:
             return
-        w = max(24, (self.size.width or 36) - 4)
+        w = max(14, self.size.width or 32)
         try:
             hdr = self.query_one("#queue-header", Static)
             ftr = self.query_one("#queue-footer", Static)
         except Exception:
             return
 
-        left_h = "PLAYLIST QUEUE"
-        right_h = "[J/K]+[ENTER]"
-        gap_h = max(1, w - len(left_h) - len(right_h))
+        left_h = "PLAYLIST QUEUE" if w >= 28 else "QUEUE"
+        right_h = "[J/K]+[ENTER]" if w >= 28 else "[J/K]"
+        if len(left_h) + len(right_h) + 1 > w:
+            right_h = ""
+        gap_h = max(1, w - len(left_h) - len(right_h)) if right_h else 0
         hdr.update(
-            Text.from_markup(f"[bold {AMBER_GLOW}]{left_h}[/]{' ' * gap_h}[{TEXT_MUTED}]{right_h}[/]"),
+            Text.from_markup(
+                f"[bold {AMBER_GLOW}]{left_h}[/]{' ' * gap_h}[{TEXT_MUTED}]{markup_escape(right_h)}[/]"
+                if right_h
+                else f"[bold {AMBER_GLOW}]{left_h}[/]"
+            ),
             layout=False,
         )
 
@@ -559,6 +567,10 @@ class QueuePanel(Widget):
         sel_idx = self.selected_original_index()
         sel_str = f"SEL: {sel_idx + 1:02d}" if sel_idx is not None else "SEL: --"
         left_f = f"ARCHIVE: {shown}/{total} TRACKS"
+        if len(left_f) + len(sel_str) + 1 > w:
+            left_f = f"ARCHIVE: {shown}/{total}"
+        if len(left_f) + len(sel_str) + 1 > w:
+            left_f = f"{shown}/{total}"
         gap_f = max(1, w - len(left_f) - len(sel_str))
         ftr.update(
             Text.from_markup(f"[{TEXT_MUTED}]{left_f}[/]{' ' * gap_f}[bold {AMBER_CORE}]{sel_str}[/]"),
@@ -647,6 +659,21 @@ class _ClickableChip(Widget):
         self.on_press = on_press
         self._accent = accent
         self._hovered = False
+        self._compact_mode = False
+
+    def set_compact(self, compact: bool) -> None:
+        self._compact_mode = bool(compact)
+        self.styles.height = 1 if self._compact_mode else 3
+        self._apply_style()
+
+    def _apply_style(self) -> None:
+        if self._compact_mode:
+            self.styles.border = "none"
+        elif self._accent:
+            self.styles.border = ("round", BORDER_AMBER)
+        else:
+            self.styles.border = ("round", BORDER_SLATE)
+        self.styles.background = BG_ACTIVE_AMBER if self._accent else BG_ELEVATED
 
     def set_label(self, label: str, accent: Optional[bool] = None) -> None:
         changed = label != self._label or (accent is not None and accent != self._accent)
@@ -654,12 +681,7 @@ class _ClickableChip(Widget):
         if accent is not None:
             self._accent = accent
         if changed:
-            if self._accent:
-                self.styles.border = ("round", BORDER_AMBER)
-                self.styles.background = BG_ACTIVE_AMBER
-            else:
-                self.styles.border = ("round", BORDER_SLATE)
-                self.styles.background = BG_ELEVATED
+            self._apply_style()
             self.refresh()
 
     def on_mount(self) -> None:
@@ -705,6 +727,7 @@ class VolumeBar(Widget):
         self.on_volume = on_volume
         self.volume: int = 100
         self._dragging: bool = False
+        self._last_drag_x: Optional[int] = None
 
     def set_volume(self, volume: int) -> None:
         clamped = max(0, min(100, int(volume)))
@@ -723,12 +746,14 @@ class VolumeBar(Widget):
     def on_mouse_down(self, event: events.MouseDown) -> None:
         if event.button == 1:
             self._dragging = True
+            self._last_drag_x = event.x
             self.capture_mouse()
             self._set_from_x(event.x)
             event.stop()
 
     def on_mouse_move(self, event: events.MouseMove) -> None:
-        if self._dragging:
+        if self._dragging and event.x != self._last_drag_x:
+            self._last_drag_x = event.x
             self._set_from_x(event.x)
             event.stop()
 
@@ -736,12 +761,14 @@ class VolumeBar(Widget):
         if self._dragging:
             self._dragging = False
             self.release_mouse()
-            self._set_from_x(event.x)
+            if event.x != self._last_drag_x:
+                self._set_from_x(event.x)
+            self._last_drag_x = None
             event.stop()
 
     def on_click(self, event: events.Click) -> None:
-        self._set_from_x(event.x)
-        event.stop()
+        if event.button == 1:
+            event.stop()
 
     def render(self) -> Text:
         w = max(8, self.size.width or 24)
@@ -796,7 +823,7 @@ class _OutputRouteBox(Widget):
     DEFAULT_CSS = f"""
     _OutputRouteBox {{
         width: 100%;
-        height: 3;
+        height: 4;
         background: {BG_ELEVATED};
         border: round {BORDER_SLATE};
         padding: 0 1;
@@ -809,7 +836,8 @@ class _OutputRouteBox(Widget):
         self.device_label: str = "MPV // Default Output"
 
     def set_device(self, label: str) -> None:
-        cleaned = (label or "").strip() or "MPV // Default Output"
+        cleaned = label.strip() if isinstance(label, str) else ""
+        cleaned = cleaned or "MPV // Default Output"
         if cleaned != self.device_label:
             self.device_label = cleaned
             self.refresh()
@@ -820,13 +848,14 @@ class _OutputRouteBox(Widget):
             self.on_cycle()
 
     def render(self) -> Text:
-        w = max(20, (self.size.width or 34) - 4)
-        left = "OUTPUT ROUTE"
-        right = "[CLICK TO CYCLE]"
+        w = max(14, self.size.width or 30)
+        left = "OUTPUT ROUTE" if w >= 24 else "OUTPUT"
+        right = "[CLICK TO CYCLE]" if w >= 30 else "[CYCLE]"
         gap = max(1, w - len(left) - len(right))
-        line1 = f"[bold {TEXT_MUTED}]{left}[/]{' ' * gap}[{TEXT_MUTED}]{right}[/]"
-        dev = self.device_label if len(self.device_label) <= w - 2 else self.device_label[: max(1, w - 3)] + "…"
-        line2 = f"[bold {AMBER_CORE}]◈[/] [{TEXT_MAIN}]{dev}[/]"
+        line1 = f"[bold {TEXT_MUTED}]{left}[/]{' ' * gap}[{TEXT_MUTED}]{markup_escape(right)}[/]"
+        dev_budget = max(4, w - 2)
+        dev = self.device_label if len(self.device_label) <= dev_budget else self.device_label[: max(1, dev_budget - 1)] + "…"
+        line2 = f"[bold {AMBER_CORE}]◈[/] [{TEXT_MAIN}]{markup_escape(dev)}[/]"
         return Text.from_markup(f"{line1}\n{line2}")
 
 
@@ -879,7 +908,7 @@ class ControlsPanel(Widget):
     }}
 
     #vol-pct {{
-        width: 6;
+        width: 5;
         height: 1;
         content-align: right middle;
         color: {AMBER_PEAK};
@@ -923,6 +952,10 @@ class ControlsPanel(Widget):
         self.on_volume = on_volume
         self.on_mute = on_mute
         self.on_cycle_device = on_cycle_device
+        self._is_playing: bool = False
+        self._shuffle_enabled: bool = False
+        self._repeat_mode: str = "off"
+        self._compact: bool = False
 
     def compose(self) -> ComposeResult:
         yield Static(id="controls-header")
@@ -941,23 +974,127 @@ class ControlsPanel(Widget):
             yield VolumeBar(on_volume=self.on_volume, id="volume-control")
         yield _OutputRouteBox(on_cycle=self.on_cycle_device, id="output-route")
         yield Static(id="controls-spacer")
-        yield Static(
-            Text.from_markup(
-                f"[bold {AMBER_CORE}][Tab][/] [{TEXT_MUTED}]Browse[/] · "
-                f"[bold {AMBER_CORE}][Space][/] [{TEXT_MUTED}]Play[/] · "
-                f"[bold {AMBER_CORE}][N/P][/] [{TEXT_MUTED}]Track[/] · "
-                f"[bold {AMBER_CORE}][+/-][/] [{TEXT_MUTED}]Vol[/] · "
-                f"[bold {AMBER_CORE}][Q][/] [{TEXT_MUTED}]Quit[/]"
-            ),
-            id="controls-hint",
-        )
+        yield Static(id="controls-hint")
 
     def on_mount(self) -> None:
+        self._apply_responsive_layout()
         self._render_header()
+        self._render_buttons()
+        self._render_hint()
 
     def on_resize(self, event: Any = None) -> None:
         if self.is_mounted:
+            self._apply_responsive_layout()
             self._render_header()
+            self._render_buttons()
+            self._render_hint()
+
+    def _is_compact(self) -> bool:
+        try:
+            app_h = self.app.size.height if self.app else 40
+            app_w = self.app.size.width if self.app else 100
+        except Exception:
+            app_h, app_w = 40, 100
+        col_w = self.size.width or 32
+        return app_h < 32 or app_w < 92 or col_w < 26
+
+    def _apply_responsive_layout(self) -> None:
+        try:
+            app_h = self.app.size.height if self.app else 40
+        except Exception:
+            app_h = 40
+        compact_v = app_h < 32 or (self.size.height and self.size.height < 18)
+        self._compact = self._is_compact()
+
+        try:
+            t_row = self.query_one("#transport-row")
+            m_row = self.query_one("#mode-row")
+            v_box = self.query_one("#volume-box")
+            o_box = self.query_one("#output-route", _OutputRouteBox)
+            chips = [
+                self.query_one("#btn-prev", _ClickableChip),
+                self.query_one("#btn-play", _ClickableChip),
+                self.query_one("#btn-next", _ClickableChip),
+                self.query_one("#btn-shuffle", _ClickableChip),
+                self.query_one("#btn-repeat", _ClickableChip),
+            ]
+        except Exception:
+            return
+
+        if compact_v:
+            t_row.styles.height = 1
+            t_row.styles.margin = (0, 0, 0, 0)
+            m_row.styles.height = 1
+            v_box.styles.height = 2
+            v_box.styles.border = "none"
+            v_box.styles.margin = (0, 0, 0, 0)
+            o_box.styles.height = 2
+            o_box.styles.border = "none"
+            o_box.styles.margin = (0, 0, 0, 0)
+            for c in chips:
+                c.set_compact(True)
+        else:
+            t_row.styles.height = 3
+            t_row.styles.margin = (1, 0, 0, 0)
+            m_row.styles.height = 3
+            v_box.styles.height = 4
+            v_box.styles.border = ("round", BORDER_SLATE)
+            v_box.styles.margin = (1, 0, 0, 0)
+            o_box.styles.height = 4
+            o_box.styles.border = ("round", BORDER_SLATE)
+            o_box.styles.margin = (1, 0, 0, 0)
+            for c in chips:
+                c.set_compact(False)
+
+    def _render_buttons(self) -> None:
+        if not self.is_mounted:
+            return
+        w = self.size.width or 32
+        narrow = w < 30
+        try:
+            self.query_one("#btn-prev", _ClickableChip).set_label("|◀" if narrow else "|◀ PREV", accent=False)
+            self.query_one("#btn-play", _ClickableChip).set_label(
+                ("❚❚" if self._is_playing else "▶") if narrow else ("❚❚ PAUSE" if self._is_playing else "▶ PLAY"),
+                accent=True,
+            )
+            self.query_one("#btn-next", _ClickableChip).set_label("▶|" if narrow else "NEXT ▶|", accent=False)
+            self.query_one("#btn-shuffle", _ClickableChip).set_label(
+                f"SHF:{'ON' if self._shuffle_enabled else 'OFF'}" if narrow else f"⇄ SHUF: {'ON' if self._shuffle_enabled else 'OFF'}",
+                accent=self._shuffle_enabled,
+            )
+            mode = self._repeat_mode if self._repeat_mode in ("off", "all", "one") else "off"
+            self.query_one("#btn-repeat", _ClickableChip).set_label(
+                f"LP:{mode.upper()}" if narrow else f"↻ LOOP: {mode.upper()}",
+                accent=(mode != "off"),
+            )
+        except Exception:
+            pass
+
+    def _render_hint(self) -> None:
+        if not self.is_mounted:
+            return
+        try:
+            hint_w = self.query_one("#controls-hint", Static)
+        except Exception:
+            return
+        w = self.size.width or 32
+        if w >= 56:
+            markup = (
+                f"[bold {AMBER_CORE}]\\[Tab][/] [{TEXT_MUTED}]Browse[/] · "
+                f"[bold {AMBER_CORE}]\\[Space][/] [{TEXT_MUTED}]Play[/] · "
+                f"[bold {AMBER_CORE}]\\[N/P][/] [{TEXT_MUTED}]Track[/] · "
+                f"[bold {AMBER_CORE}]\\[+/-][/] [{TEXT_MUTED}]Vol[/] · "
+                f"[bold {AMBER_CORE}]\\[Q][/] [{TEXT_MUTED}]Quit[/]"
+            )
+        elif w >= 32:
+            markup = (
+                f"[bold {AMBER_CORE}]\\[Tab][/] [{TEXT_MUTED}]Browse[/] · "
+                f"[bold {AMBER_CORE}]\\[Space][/] [{TEXT_MUTED}]Play[/] · "
+                f"[bold {AMBER_CORE}]\\[Q][/] [{TEXT_MUTED}]Quit[/]"
+            )
+        else:
+            markup = f"[bold {AMBER_CORE}]\\[Tab][/] [{TEXT_MUTED}]·[/] [bold {AMBER_CORE}]\\[Space][/] [{TEXT_MUTED}]·[/] [bold {AMBER_CORE}]\\[Q][/]"
+        hint_w.update(Text.from_markup(markup), layout=False)
 
     def _render_header(self) -> None:
         if not self.is_mounted:
@@ -966,9 +1103,9 @@ class ControlsPanel(Widget):
             hdr = self.query_one("#controls-header", Static)
         except Exception:
             return
-        w = max(24, (self.size.width or 36) - 4)
-        left = "MEDIA CONTROLS"
-        right = "AUDIO SINK"
+        w = max(14, self.size.width or 32)
+        left = "MEDIA CONTROLS" if w >= 26 else "CONTROLS"
+        right = "AUDIO SINK" if w >= 26 else "SINK"
         gap = max(1, w - len(left) - len(right))
         hdr.update(Text.from_markup(f"[bold {AMBER_GLOW}]{left}[/]{' ' * gap}[{TEXT_MUTED}]{right}[/]"), layout=False)
 
@@ -982,25 +1119,13 @@ class ControlsPanel(Widget):
         device_name: str = "",
     ) -> None:
         """Synchronize transport, mode, volume, and output device displays."""
+        self._is_playing = bool(is_playing)
+        self._shuffle_enabled = bool(shuffle_enabled)
+        self._repeat_mode = repeat_mode if repeat_mode in ("off", "all", "one") else "off"
         if not self.is_mounted:
             return
+        self._render_buttons()
         try:
-            play_btn = self.query_one("#btn-play", _ClickableChip)
-            play_btn.set_label("❚❚ PAUSE" if is_playing else "▶ PLAY", accent=True)
-
-            shuf_btn = self.query_one("#btn-shuffle", _ClickableChip)
-            shuf_btn.set_label(
-                f"⇄ SHUF: {'ON' if shuffle_enabled else 'OFF'}",
-                accent=shuffle_enabled,
-            )
-
-            mode = repeat_mode if repeat_mode in ("off", "all", "one") else "off"
-            rep_btn = self.query_one("#btn-repeat", _ClickableChip)
-            rep_btn.set_label(
-                f"↻ LOOP: {mode.upper()}",
-                accent=(mode != "off"),
-            )
-
             clamped_vol = max(0, min(100, int(volume)))
             self.query_one("#volume-control", VolumeBar).set_volume(clamped_vol)
             self.query_one("#vol-mute-btn", _MuteLabel).set_muted(clamped_vol == 0)
@@ -1055,11 +1180,11 @@ class StatusFooter(Widget):
             self.refresh()
 
     def render(self) -> Text:
-        w = max(40, (self.size.width or 100) - 2)
+        w = max(30, self.size.width or 100)
         left = "BARD // UTF-8 • 24-BIT TRUECOLOR"
         right = self.status_text
         if len(left) + len(right) + 2 > w:
             avail = max(10, w - len(left) - 2)
             right = right[: max(1, avail - 1)] + "…"
         gap = max(1, w - len(left) - len(right))
-        return Text.from_markup(f"[{TEXT_MUTED}]{left}[/]{' ' * gap}[{AMBER_GLOW}]{right}[/]")
+        return Text.from_markup(f"[{TEXT_MUTED}]{left}[/]{' ' * gap}[{AMBER_GLOW}]{markup_escape(right)}[/]")

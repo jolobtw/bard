@@ -858,7 +858,55 @@ def test_app_cycle_output_device(tmp_path):
             app.action_cycle_output_device()
             await pilot.pause()
             player.set_audio_device.assert_called_with("wasapi/{spk}")
-            assert "Speakers (Realtek)" in str(app.stage_widget.query_one("#output-route").render())
+            out_box = app.stage_widget.query_one("#output-route")
+            assert out_box.content_size.height >= 2
+            assert "Speakers (Realtek)" in str(out_box.render())
+
+    asyncio.run(_run())
+
+
+def test_app_startup_auto_focus_is_none(tmp_path):
+    async def _run():
+        cfg = BardConfig(config_path=tmp_path / "config.json")
+        for _ in range(5):
+            app = BardApp(cfg, MagicMock())
+            async with app.run_test(size=(110, 40)) as pilot:
+                await pilot.pause()
+                assert app.focused is None
+
+    asyncio.run(_run())
+
+
+def test_app_volume_updates_ui_when_no_track_loaded(tmp_path):
+    async def _run():
+        cfg = BardConfig(config_path=tmp_path / "config.json")
+        player = MagicMock()
+        player.is_playing.return_value = False
+        player.get_position.return_value = 0.0
+        player.get_duration.return_value = 0.0
+        player.get_volume.return_value = 60
+        player.get_audio_info.return_value = {}
+        player.get_audio_devices.return_value = []
+        player.get_current_audio_device.return_value = ""
+
+        app = BardApp(cfg, MagicMock(), player=player)
+        async with app.run_test(size=(110, 40)) as pilot:
+            await pilot.pause()
+            assert app.stage_widget.playback_data is None
+
+            app.action_set_volume(42)
+            await pilot.pause()
+            assert app.stage_widget.query_one("#vol-pct").render().plain.strip() == "42%"
+
+            player.get_volume.return_value = 42
+            app.action_volume_up()
+            await pilot.pause()
+            assert app.stage_widget.query_one("#vol-pct").render().plain.strip() == "47%"
+
+            player.get_volume.return_value = 47
+            app.action_volume_down()
+            await pilot.pause()
+            assert app.stage_widget.query_one("#vol-pct").render().plain.strip() == "42%"
 
     asyncio.run(_run())
 

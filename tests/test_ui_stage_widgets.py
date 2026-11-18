@@ -175,10 +175,15 @@ def test_controls_panel_non_focusable_buttons_volume_and_output_route():
             assert "SHUF: ON" in str(panel.query_one("#btn-shuffle").render())
             assert "WASAPI // Speakers" in str(panel.query_one("#output-route").render())
 
-            # VolumeBar mute toggle & slider drag/click clamping
+            # VolumeBar mute toggle & slider drag/click clamping (single click fires once)
             vol_bar = panel.query_one("#volume-control", VolumeBar)
             await pilot.click("#vol-mute-btn")
             assert "mute" in calls
+
+            vol_calls_before = [c for c in calls if isinstance(c, tuple) and c[0] == "vol"]
+            await pilot.click("#volume-control", offset=(2, 0))
+            vol_calls_after = [c for c in calls if isinstance(c, tuple) and c[0] == "vol"]
+            assert len(vol_calls_after) == len(vol_calls_before) + 1
 
             vw = vol_bar.size.width
             vol_bar.on_mouse_down(MouseDown(vol_bar, x=0, y=0, delta_x=0, delta_y=0, button=1, shift=False, meta=False, ctrl=False))
@@ -207,5 +212,91 @@ def test_status_footer_truthful_content():
             assert "24-BIT TRUECOLOR" in text
             assert "RESONATING // OPUS 48kHz" in text
             assert "/dev/pts/0" not in text
+
+    asyncio.run(_run())
+
+
+def test_markup_escaping_in_dynamic_track_and_device_strings():
+    from bard.ui.header import ArcaneHeader
+    from bard.ui.stage_widgets import ArtifactPanel, QueuePanel, StatusFooter, _OutputRouteBox
+
+    tricky_title = "Broken [/] Title [Official Audio]"
+    tricky_artist = "Artist [Feat. X][/]"
+    tricky_device = "DAC [ASIO][/]"
+
+    class TestApp(App):
+        def compose(self) -> ComposeResult:
+            yield ArcaneHeader(is_playing=True, device_name=tricky_device)
+            yield ArtifactPanel()
+            yield QueuePanel()
+            yield _OutputRouteBox()
+            yield StatusFooter()
+
+    async def _run():
+        app = TestApp()
+        async with app.run_test(size=(100, 40)) as pilot:
+            art = app.query_one(ArtifactPanel)
+            q = app.query_one(QueuePanel)
+            out = app.query_one(_OutputRouteBox)
+            ftr = app.query_one(StatusFooter)
+
+            t = Track("id1", tricky_title, tricky_artist, "Album [Deluxe][/]", 200, "")
+            q.set_queue([t], 0)
+            art.set_track(
+                {"id": "id1", "title": tricky_title, "artist": tricky_artist, "album": "Album [Deluxe][/]", "album_art_url": ""},
+                queue_pos=(1, 1),
+            )
+            out.set_device(tricky_device)
+            ftr.set_status("PLAYING // [OPUS][/]")
+            await pilot.pause()
+
+            assert "[Official Audio]" in art.query_one("#track-title", Static).render().plain
+            assert "[/]" in art.query_one("#track-title", Static).render().plain
+            assert "[Official Audio]" in q.query_one("#queue-list").render().plain
+            assert "[ASIO][/]" in out.render().plain
+            assert "[/]" in ftr.render().plain
+            assert "[ASIO][/]" in app.query_one(ArcaneHeader).render().plain
+
+    asyncio.run(_run())
+
+
+def test_output_route_box_two_lines_and_compact_80x24_no_clipping():
+    from bard.ui.header import ArcaneHeader
+    from bard.ui.zen_stage import ZenStage
+
+    class TestApp(App):
+        def compose(self) -> ComposeResult:
+            yield ArcaneHeader(is_playing=False, device_name="Bard")
+            yield ZenStage()
+
+    async def _run():
+        # Standard size: _OutputRouteBox content height >= 2 so device line is visible
+        app_std = TestApp()
+        async with app_std.run_test(size=(110, 40)) as pilot:
+            stage = app_std.query_one(ZenStage)
+            stage.set_audio_device("Speakers (Realtek)")
+            await pilot.pause()
+            out_box = stage.query_one("#output-route")
+            assert out_box.content_size.height >= 2
+            assert "Speakers (Realtek)" in out_box.render().plain
+
+        # Compact 80x24: key controls, queue footer SEL, and spectrum header fit cleanly
+        app_compact = TestApp()
+        async with app_compact.run_test(size=(80, 24)) as pilot:
+            stage = app_compact.query_one(ZenStage)
+            stage.set_queue([Track("1", "Track One", "Artist", "Album", 120, "")], 0)
+            stage.update_playback({"id": "1", "title": "Track One", "artist": "Artist", "duration_ms": 120000, "is_playing": True, "album_art_url": "", "volume": 70})
+            await pilot.pause()
+
+            spec_hdr = stage.query_one("#spectrum-header", Static)
+            assert "RESONATING" in spec_hdr.render().plain
+            assert len(spec_hdr.render().plain.splitlines()) == 1
+
+            q_ftr = stage.query_one("#queue-footer", Static)
+            assert "SEL:" in q_ftr.render().plain
+
+            out_box = stage.query_one("#output-route")
+            assert out_box.region.bottom <= 24
+            assert stage.query_one("#volume-control").region.bottom <= 24
 
     asyncio.run(_run())

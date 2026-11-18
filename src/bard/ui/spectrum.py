@@ -155,6 +155,7 @@ class SeekBar(Widget):
         self.progress_ms: int = 0
         self.duration_ms: int = 0
         self._dragging: bool = False
+        self._last_drag_x: Optional[int] = None
 
     def set_progress(self, progress_ms: int, duration_ms: int) -> None:
         """Update elapsed/total milliseconds and redraw if changed."""
@@ -169,9 +170,11 @@ class SeekBar(Widget):
     def _bar_bounds(self) -> tuple[int, int]:
         """Return (bar_left_x, bar_width) inside widget coordinates."""
         total_w = max(24, self.size.width or 80)
-        # Padding (1 left) + "00:00 [" (7) = 8; "] 00:00" + padding (1 right) = 8
-        bar_left = 8
-        bar_w = max(8, total_w - 16)
+        curr_len = len(format_ms(self.progress_ms))
+        total_len = len(format_ms(self.duration_ms))
+        # Left padding (1) + curr_str + " [" (2); "] " (2) + total_str + right padding (1)
+        bar_left = 1 + curr_len + 2
+        bar_w = max(8, total_w - (curr_len + total_len + 6))
         return bar_left, bar_w
 
     def _seek_from_x(self, x: int) -> None:
@@ -184,12 +187,14 @@ class SeekBar(Widget):
     def on_mouse_down(self, event: events.MouseDown) -> None:
         if event.y == 0 and event.button == 1:
             self._dragging = True
+            self._last_drag_x = event.x
             self.capture_mouse()
             self._seek_from_x(event.x)
             event.stop()
 
     def on_mouse_move(self, event: events.MouseMove) -> None:
-        if self._dragging:
+        if self._dragging and event.x != self._last_drag_x:
+            self._last_drag_x = event.x
             self._seek_from_x(event.x)
             event.stop()
 
@@ -197,12 +202,13 @@ class SeekBar(Widget):
         if self._dragging:
             self._dragging = False
             self.release_mouse()
-            self._seek_from_x(event.x)
+            if event.x != self._last_drag_x:
+                self._seek_from_x(event.x)
+            self._last_drag_x = None
             event.stop()
 
     def on_click(self, event: events.Click) -> None:
-        if event.y == 0:
-            self._seek_from_x(event.x)
+        if event.button == 1 and event.y == 0:
             event.stop()
 
     def render(self) -> Text:
@@ -295,7 +301,7 @@ class SpectrumDeck(Widget):
             app_h = self.app.size.height if self.app else 40
         except Exception:
             app_h = 40
-        target_h = 6 if app_h < 32 else 9
+        target_h = 5 if app_h < 32 else 9
         try:
             well = self.query_one("#spectrum-well", Static)
             well.styles.height = target_h
@@ -324,7 +330,7 @@ class SpectrumDeck(Widget):
 
     def _half_bin_count(self) -> int:
         w = self.size.width or (self.app.size.width if self.app else 100)
-        inner = max(20, w - 4)
+        inner = max(20, w - 2)
         return min(28, max(8, inner // 2))
 
     def _render_header(self) -> None:
@@ -334,7 +340,7 @@ class SpectrumDeck(Widget):
             hdr = self.query_one("#spectrum-header", Static)
         except Exception:
             return
-        w = max(40, (self.size.width or 100) - 4)
+        w = max(24, hdr.size.width or (self.size.width or 100) - 2)
         left = "BARD // CENTER-OUTWARD HARMONIC SPECTRUM"
         if self.is_playing:
             right = f"[{TEXT_MUTED}]ORIGIN: 0Hz CENTER · STATE:[/] [bold {AMBER_CORE}]● RESONATING[/]"
@@ -342,6 +348,16 @@ class SpectrumDeck(Widget):
         else:
             right = f"[{TEXT_MUTED}]ORIGIN: 0Hz CENTER · STATE: ○ STANDBY[/]"
             right_plain = "ORIGIN: 0Hz CENTER · STATE: ○ STANDBY"
+
+        if len(left) + len(right_plain) + 1 > w:
+            left = "BARD // SPECTRUM"
+            if self.is_playing:
+                right = f"[bold {AMBER_CORE}]● RESONATING[/]"
+                right_plain = "● RESONATING"
+            else:
+                right = f"[{TEXT_MUTED}]○ STANDBY[/]"
+                right_plain = "○ STANDBY"
+
         gap = max(1, w - len(left) - len(right_plain))
         hdr.update(Text.from_markup(f"[bold {AMBER_GLOW}]{left}[/]{' ' * gap}{right}"), layout=False)
 
@@ -352,7 +368,7 @@ class SpectrumDeck(Widget):
             div = self.query_one("#spectrum-divider", Static)
         except Exception:
             return
-        w = max(20, (self.size.width or 100) - 2)
+        w = max(16, div.size.width or self.size.width or 100)
         color = AMBER_CORE if self.is_playing else BORDER_SLATE
         div.update(Text.from_markup(f"[{color}]{'─' * w}[/]"), layout=False)
 

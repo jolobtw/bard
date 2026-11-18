@@ -117,12 +117,16 @@ def test_seekbar_click_and_drag_clamps_bounds():
             bar = deck.query_one("#progress-bar", SeekBar)
             w = bar.size.width
 
-            # Click left of bar start -> clamps to 0.0
+            # Click left of bar start -> clamps to 0.0, fires exactly once per click
+            before_count = len(seeks)
             await pilot.click("#progress-bar", offset=(0, 0))
+            assert len(seeks) == before_count + 1
             assert seeks[-1] == 0.0
 
-            # Click past right edge -> clamps to duration (100.0)
+            # Click past right edge -> clamps to duration (100.0), fires once
+            before_count = len(seeks)
             await pilot.click("#progress-bar", offset=(max(0, w - 1), 0))
+            assert len(seeks) == before_count + 1
             assert seeks[-1] == 100.0
 
             # Drag to midpoint

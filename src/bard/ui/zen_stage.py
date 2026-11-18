@@ -100,6 +100,7 @@ class ZenStage(Widget):
         self.repeat_mode: str = "off"
         self.playback_data: Optional[Dict[str, Any]] = None
         self._current_progress_ms: int = 0
+        self._current_volume: int = 100
         self.device_name: Optional[str] = None
         self._audio_info: Dict[str, Any] = {}
         self._audio_device_label: str = "MPV // Default Output"
@@ -309,9 +310,11 @@ class ZenStage(Widget):
 
     def update_volume(self, volume: int) -> None:
         """Update volume slider without re-rendering artwork or spectrum."""
+        clamped = max(0, min(100, int(volume)))
+        self._current_volume = clamped
         if self.is_mounted:
             try:
-                self.query_one("#controls-panel", ControlsPanel).set_volume(volume)
+                self.query_one("#controls-panel", ControlsPanel).set_volume(clamped)
             except Exception:
                 pass
 
@@ -375,7 +378,8 @@ class ZenStage(Widget):
         if not self.is_mounted:
             return
         is_playing = bool(self.playback_data and self.playback_data.get("is_playing", False))
-        vol = int(self.playback_data.get("volume", 100)) if self.playback_data else 100
+        vol = int(self.playback_data.get("volume", self._current_volume)) if self.playback_data else self._current_volume
+        self._current_volume = vol
         try:
             self.query_one("#controls-panel", ControlsPanel).set_state(
                 is_playing=is_playing,
