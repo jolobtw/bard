@@ -64,7 +64,7 @@ def test_render_spectrum_lines_gradient_and_blocks():
 
 
 def test_spectrum_deck_play_state_gating_and_rapid_toggle():
-    from bard.ui.spectrum import SpectrumDeck
+    from bard.ui.spectrum import SeekBar, SpectrumDeck
 
     class TestApp(App):
         def compose(self) -> ComposeResult:
@@ -81,20 +81,26 @@ def test_spectrum_deck_play_state_gating_and_rapid_toggle():
             assert "STANDBY · AWAITING RESONANCE" in rendered_idle
             assert "60Hz SUB-CORE" not in rendered_idle
 
-            # Playing: spectrum active (no header banner noise)
+            # Playing: spectrum active (no header banner noise and no kHz axis)
             deck.set_state(is_playing=True, has_track=True, progress_ms=10000, duration_ms=120000)
             await pilot.pause()
             rendered_playing = str(deck.query_one("#spectrum-well").render())
             assert "STANDBY · AWAITING RESONANCE" not in rendered_playing
-            assert "60Hz SUB-CORE" in rendered_playing
+            assert "kHz" not in rendered_playing
+            assert "60Hz" not in rendered_playing
+            assert any(ch in rendered_playing for ch in "▁▂▃▄▅▆▇█")
             assert len(deck.query("#spectrum-header")) == 0
+
+            # Progress scrubber uses subtle line/thumb bar
+            bar_rendered = str(deck.query_one("#progress-bar", SeekBar).render())
+            assert "●" in bar_rendered
 
             # Rapid toggle back to paused clears immediately
             deck.set_state(is_playing=False, has_track=True, progress_ms=10000, duration_ms=120000)
             await pilot.pause()
             rendered_paused = str(deck.query_one("#spectrum-well").render())
             assert "STANDBY · AWAITING RESONANCE" in rendered_paused
-            assert "60Hz SUB-CORE" not in rendered_paused
+            assert not any(ch in rendered_paused for ch in "▁▂▃▄▅▆▇█")
 
     asyncio.run(_run())
 

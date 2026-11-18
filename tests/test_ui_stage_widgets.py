@@ -46,9 +46,9 @@ def test_artifact_panel_empty_active_codec_and_marquee():
             assert "Chronomancer" in str(panel.query_one("#track-meta", Static).render())
             assert "Codex" in str(panel.query_one("#track-source", Static).render())
             codec_text = str(panel.query_one("#track-codec", Static).render())
-            assert "[OPUS · 48kHz]" in codec_text
-            assert "FLAC" not in codec_text
-            assert "BPM" not in codec_text
+            assert "OPUS" not in codec_text
+            assert "48kHz" not in codec_text
+            assert "Synthwave" in codec_text
 
             # Marquee scrolls long title
             t_before = str(panel.query_one("#track-title", Static).render())
@@ -90,7 +90,7 @@ def test_queue_panel_filter_cursor_empty_match_and_click():
             panel.set_queue(tracks, current_index=0)
             await pilot.pause()
 
-            assert "ARCHIVE: 3/3 TRACKS" in str(panel.query_one("#queue-footer", Static).render())
+            assert len(panel.query("#queue-footer")) == 0
             assert panel.selected_original_index() == 0
 
             # Filter to "obelisk" -> index 1 in original queue
@@ -98,7 +98,7 @@ def test_queue_panel_filter_cursor_empty_match_and_click():
             q_input = panel.query_one("#queue-filter", Input)
             q_input.value = "obelisk"
             await pilot.pause()
-            assert "ARCHIVE: 1/3 TRACKS" in str(panel.query_one("#queue-footer", Static).render())
+            assert "Obsidian Obelisk" in panel.query_one("#queue-list").render().plain
             assert panel.selected_original_index() == 1
 
             # Blur keeping filter -> still filtered, cursor navigable
@@ -107,19 +107,17 @@ def test_queue_panel_filter_cursor_empty_match_and_click():
             assert panel.has_filter_text() is True
             assert panel.selected_original_index() == 1
 
-            # Filter to zero matches -> safe ARCHIVE: 0/3, SEL: --, cursor returns None
+            # Filter to zero matches -> safe empty message, cursor returns None
             q_input.value = "zzzzz_no_match"
             await pilot.pause()
-            footer_empty = str(panel.query_one("#queue-footer", Static).render())
-            assert "ARCHIVE: 0/3 TRACKS" in footer_empty
-            assert "SEL: --" in footer_empty
+            assert "No tracks in queue" in panel.query_one("#queue-list").render().plain
             panel.move_cursor(1)
             assert panel.selected_original_index() is None
 
             # Clear filter restores all 3 tracks; clicking row 2 triggers on_select_index(2)
             panel.clear_filter()
             await pilot.pause()
-            assert "ARCHIVE: 3/3 TRACKS" in str(panel.query_one("#queue-footer", Static).render())
+            assert "Solar Eclipse" in panel.query_one("#queue-list").render().plain
             await pilot.click("#queue-list", offset=(4, 2))
             assert selected[-1] == 2
 
@@ -159,8 +157,9 @@ def test_controls_panel_non_focusable_buttons_volume_and_output_route():
             await pilot.click("#btn-next")
             await pilot.click("#btn-shuffle")
             await pilot.click("#btn-repeat")
-            await pilot.click("#output-route")
-            assert calls[:6] == ["prev", "play", "next", "shuffle", "repeat", "device"]
+            assert calls[:5] == ["prev", "play", "next", "shuffle", "repeat"]
+            assert len(panel.query("#output-route")) == 0
+            assert "AUDIO SINK" not in str(panel.query_one("#controls-header", Static).render())
 
             panel.set_state(
                 is_playing=True,
@@ -173,7 +172,7 @@ def test_controls_panel_non_focusable_buttons_volume_and_output_route():
             await pilot.pause()
             assert "LOOP: ONE" in str(panel.query_one("#btn-repeat").render())
             assert "SHUF: ON" in str(panel.query_one("#btn-shuffle").render())
-            assert "WASAPI // Speakers" in str(panel.query_one("#output-route").render())
+            assert "●" in str(panel.query_one("#volume-control", VolumeBar).render())
 
             # VolumeBar mute toggle & slider drag/click clamping (single click fires once)
             vol_bar = panel.query_one("#volume-control", VolumeBar)
@@ -196,7 +195,7 @@ def test_controls_panel_non_focusable_buttons_volume_and_output_route():
 
 def test_markup_escaping_in_dynamic_track_and_device_strings():
     from bard.ui.header import ArcaneHeader
-    from bard.ui.stage_widgets import ArtifactPanel, QueuePanel, _OutputRouteBox
+    from bard.ui.stage_widgets import ArtifactPanel, QueuePanel
 
     tricky_title = "Broken [/] Title [Official Audio]"
     tricky_artist = "Artist [Feat. X][/]"
@@ -207,14 +206,12 @@ def test_markup_escaping_in_dynamic_track_and_device_strings():
             yield ArcaneHeader(is_playing=True, device_name=tricky_device)
             yield ArtifactPanel()
             yield QueuePanel()
-            yield _OutputRouteBox()
 
     async def _run():
         app = TestApp()
         async with app.run_test(size=(100, 40)) as pilot:
             art = app.query_one(ArtifactPanel)
             q = app.query_one(QueuePanel)
-            out = app.query_one(_OutputRouteBox)
 
             t = Track("id1", tricky_title, tricky_artist, "Album [Deluxe][/]", 200, "")
             q.set_queue([t], 0)
@@ -222,19 +219,17 @@ def test_markup_escaping_in_dynamic_track_and_device_strings():
                 {"id": "id1", "title": tricky_title, "artist": tricky_artist, "album": "Album [Deluxe][/]", "album_art_url": ""},
                 queue_pos=(1, 1),
             )
-            out.set_device(tricky_device)
             await pilot.pause()
 
             assert "[Official Audio]" in art.query_one("#track-title", Static).render().plain
             assert "[/]" in art.query_one("#track-title", Static).render().plain
             assert "[Official Audio]" in q.query_one("#queue-list").render().plain
-            assert "[ASIO][/]" in out.render().plain
             assert "[ASIO][/]" in app.query_one(ArcaneHeader).render().plain
 
     asyncio.run(_run())
 
 
-def test_output_route_box_two_lines_and_compact_80x24_no_clipping():
+def test_compact_80x24_no_clipping():
     from bard.ui.header import ArcaneHeader
     from bard.ui.zen_stage import ZenStage
 
@@ -244,19 +239,15 @@ def test_output_route_box_two_lines_and_compact_80x24_no_clipping():
             yield ZenStage()
 
     async def _run():
-        # Standard size: _OutputRouteBox content height >= 2 and no header/footer noise
         app_std = TestApp()
         async with app_std.run_test(size=(110, 40)) as pilot:
             stage = app_std.query_one(ZenStage)
-            stage.set_audio_device("Speakers (Realtek)")
             await pilot.pause()
-            out_box = stage.query_one("#output-route")
-            assert out_box.content_size.height >= 2
-            assert "Speakers (Realtek)" in out_box.render().plain
             assert len(stage.query("#spectrum-header")) == 0
             assert len(stage.query("#status-footer")) == 0
+            assert len(stage.query("#output-route")) == 0
+            assert len(stage.query("#queue-footer")) == 0
 
-        # Compact 80x24: key controls and queue footer SEL fit cleanly
         app_compact = TestApp()
         async with app_compact.run_test(size=(80, 24)) as pilot:
             stage = app_compact.query_one(ZenStage)
@@ -264,11 +255,6 @@ def test_output_route_box_two_lines_and_compact_80x24_no_clipping():
             stage.update_playback({"id": "1", "title": "Track One", "artist": "Artist", "duration_ms": 120000, "is_playing": True, "album_art_url": "", "volume": 70})
             await pilot.pause()
 
-            q_ftr = stage.query_one("#queue-footer", Static)
-            assert "SEL:" in q_ftr.render().plain
-
-            out_box = stage.query_one("#output-route")
-            assert out_box.region.bottom <= 24
             assert stage.query_one("#volume-control").region.bottom <= 24
 
     asyncio.run(_run())

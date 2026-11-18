@@ -66,7 +66,9 @@ def test_zen_stage_empty_and_active_state_rendering():
             })
             await pilot.pause()
             assert "Arcane Echoes" in str(title.render())
-            assert "60Hz SUB-CORE" in str(stage.query_one("#spectrum-well", Static).render())
+            spec_plain = str(stage.query_one("#spectrum-well", Static).render())
+            assert any(ch in spec_plain for ch in "▁▂▃▄▅▆▇█")
+            assert "kHz" not in spec_plain
             art_plain = str(stage.query_one("#art-box", Static).render())
             assert "▁" in art_plain and "▔" in art_plain
             assert "▕" in art_plain and "▏" in art_plain
@@ -142,8 +144,8 @@ def test_zen_stage_clickable_controls_queue_and_seek_volume():
             await pilot.click("#btn-next")
             await pilot.click("#btn-shuffle")
             await pilot.click("#btn-repeat")
-            await pilot.click("#output-route")
-            assert calls[:6] == ["prev", "play_pause", "next", "shuffle", "repeat", "device"]
+            assert calls[:5] == ["prev", "play_pause", "next", "shuffle", "repeat"]
+            assert len(stage.query("#output-route")) == 0
 
             stage.set_shuffle(True)
             stage.set_repeat("one")
@@ -159,7 +161,6 @@ def test_zen_stage_clickable_controls_queue_and_seek_volume():
             assert stage.get_selected_queue_index() == 1
 
             stage.set_audio_info({"codec": "opus", "samplerate": 48000})
-            stage.set_audio_device("WASAPI // Focusrite")
             stage.update_playback({
                 "id": "1",
                 "title": "Alpha",
@@ -173,8 +174,7 @@ def test_zen_stage_clickable_controls_queue_and_seek_volume():
             })
             await pilot.pause()
             assert vol_bar.volume == 80
-            assert "OPUS · 48kHz" in str(stage.query_one("#track-codec", Static).render())
-            assert "WASAPI // Focusrite" in str(stage.query_one("#output-route").render())
+            assert "48kHz" not in str(stage.query_one("#track-codec", Static).render())
 
             await pilot.click("#vol-mute-btn")
             assert "mute" in calls

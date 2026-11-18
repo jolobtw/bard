@@ -216,15 +216,11 @@ class SeekBar(Widget):
         total_str = format_ms(self.duration_ms)
         _, bar_w = self._bar_bounds()
         pct = min(1.0, max(0.0, self.progress_ms / self.duration_ms)) if self.duration_ms > 0 else 0.0
-        filled = int(round(bar_w * pct))
-        unfilled = max(0, bar_w - filled)
-
-        filled_str = f"[{AMBER_CORE}]{'█' * filled}[/]" if filled > 0 else ""
-        unfilled_str = f"[{BORDER_SLATE}]{'░' * unfilled}[/]" if unfilled > 0 else ""
-        time_color = AMBER_PEAK if self.duration_ms > 0 else TEXT_MUTED
-        return Text.from_markup(
-            f"[bold {time_color}]{curr_str}[/] [{TEXT_MUTED}][[/]{filled_str}{unfilled_str}[{TEXT_MUTED}]] [/][{TEXT_MUTED}]{total_str}[/]"
-        )
+        filled = int((bar_w - 1) * pct)
+        unfilled = max(0, (bar_w - 1) - filled)
+        bar = render_arcane_bar(filled, unfilled)
+        curr_color = TEXT_MAIN if self.duration_ms > 0 else TEXT_MUTED
+        return Text.from_markup(f"[{curr_color}]{curr_str}[/]  {bar}  [{TEXT_MUTED}]{total_str}[/]")
 
 
 class SpectrumDeck(Widget):
@@ -354,20 +350,9 @@ class SpectrumDeck(Widget):
         if len(self._bins) != n_half:
             self._bins = generate_simulated_bins(self._phase, n_bins=n_half)
 
-        well_h = well.size.height or 9
-        bar_rows = max(4, well_h - 1)
-        spec_lines = render_spectrum_lines(self._bins, rows=bar_rows)
-        total_cols = n_half * 2
-        core_label = "◈ 60Hz SUB-CORE ◈"
-        if total_cols >= 48:
-            side_w = max(6, (total_cols - len(core_label)) // 2)
-            left_axis = f"16kHz{' ' * max(1, side_w - 9)}4kHz "
-            right_axis = f" 4kHz{' ' * max(1, side_w - 10)}16kHz"
-            axis = f"[{TEXT_MUTED}]{left_axis}[/][bold {AMBER_PEAK}]{core_label}[/][{TEXT_MUTED}]{right_axis}[/]"
-        else:
-            axis = f"[bold {AMBER_PEAK}]{core_label}[/]"
-
-        well.update(Text.from_markup("\n".join(spec_lines + [axis])), layout=False)
+        well_h = max(3, well.size.height or 9)
+        spec_lines = render_spectrum_lines(self._bins, rows=well_h)
+        well.update(Text.from_markup("\n".join(spec_lines)), layout=False)
 
     def set_playing(self, is_playing: bool) -> None:
         """Toggle play-state gating on the spectrum visualizer."""

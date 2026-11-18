@@ -858,9 +858,7 @@ def test_app_cycle_output_device(tmp_path):
             app.action_cycle_output_device()
             await pilot.pause()
             player.set_audio_device.assert_called_with("wasapi/{spk}")
-            out_box = app.stage_widget.query_one("#output-route")
-            assert out_box.content_size.height >= 2
-            assert "Speakers (Realtek)" in str(out_box.render())
+            assert len(app.stage_widget.query("#output-route")) == 0
 
     asyncio.run(_run())
 

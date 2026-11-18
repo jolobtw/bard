@@ -28,7 +28,7 @@ from bard.ui.palette import (
     TEXT_MUTED,
     track_rune,
 )
-from bard.ui.spectrum import format_ms
+from bard.ui.spectrum import format_ms, render_arcane_bar
 
 
 class ArtifactPanel(Widget):
@@ -212,25 +212,12 @@ class ArtifactPanel(Widget):
             codec_w = self.query_one("#track-codec", Static)
         except Exception:
             return
-        codec = str(self.audio_info.get("codec") or "").strip().upper()
-        rate = self.audio_info.get("samplerate")
-        parts: List[str] = []
-        if codec and rate:
-            khz = f"{int(rate) / 1000:g}kHz"
-            parts.append(markup_escape(f"[{codec} · {khz}]"))
-        elif codec:
-            parts.append(markup_escape(f"[{codec}]"))
         src = ""
         if self.playback_data:
             ps = str(self.playback_data.get("playlist_source") or self.playback_data.get("source") or "").strip()
             if ps:
-                src = f"[{TEXT_MUTED}]♫ {markup_escape(ps[:18])}[/]"
-        badge_line = f"[bold {AMBER_CORE}]{' '.join(parts)}[/]" if parts else ""
-        if badge_line and src:
-            codec_w.update(Text.from_markup(f"{badge_line} {src}"), layout=False)
-        elif badge_line:
-            codec_w.update(Text.from_markup(badge_line), layout=False)
-        elif src:
+                src = f"[{TEXT_MUTED}]♫ {markup_escape(ps[:24])}[/]"
+        if src:
             codec_w.update(Text.from_markup(src), layout=False)
         else:
             codec_w.update("", layout=False)
@@ -453,11 +440,6 @@ class QueuePanel(Widget):
         border: none;
         color: {AMBER_PEAK};
     }}
-
-    #queue-footer {{
-        width: 100%;
-        height: 1;
-    }}
     """
 
     def __init__(
@@ -479,7 +461,6 @@ class QueuePanel(Widget):
             yield Static("/", id="queue-filter-prefix")
             yield Input(placeholder="filter...", id="queue-filter")
         yield _QueueListView(on_click_row=self._handle_row_click, id="queue-list")
-        yield Static(id="queue-footer")
 
     def on_mount(self) -> None:
         self._apply_filter()
@@ -544,7 +525,6 @@ class QueuePanel(Widget):
         w = max(14, self.size.width or 32)
         try:
             hdr = self.query_one("#queue-header", Static)
-            ftr = self.query_one("#queue-footer", Static)
         except Exception:
             return
 
@@ -559,21 +539,6 @@ class QueuePanel(Widget):
                 if right_h
                 else f"[bold {AMBER_GLOW}]{left_h}[/]"
             ),
-            layout=False,
-        )
-
-        total = len(self._tracks)
-        shown = len(self._filtered_entries)
-        sel_idx = self.selected_original_index()
-        sel_str = f"SEL: {sel_idx + 1:02d}" if sel_idx is not None else "SEL: --"
-        left_f = f"ARCHIVE: {shown}/{total} TRACKS"
-        if len(left_f) + len(sel_str) + 1 > w:
-            left_f = f"ARCHIVE: {shown}/{total}"
-        if len(left_f) + len(sel_str) + 1 > w:
-            left_f = f"{shown}/{total}"
-        gap_f = max(1, w - len(left_f) - len(sel_str))
-        ftr.update(
-            Text.from_markup(f"[{TEXT_MUTED}]{left_f}[/]{' ' * gap_f}[bold {AMBER_CORE}]{sel_str}[/]"),
             layout=False,
         )
 
@@ -772,12 +737,9 @@ class VolumeBar(Widget):
 
     def render(self) -> Text:
         w = max(8, self.size.width or 24)
-        bar_w = max(4, w - 2)
-        filled = int(round((self.volume / 100.0) * bar_w))
-        unfilled = max(0, bar_w - filled)
-        fill_str = f"[{AMBER_CORE}]{'█' * filled}[/]" if filled > 0 else ""
-        empty_str = f"[{BORDER_SLATE}]{'░' * unfilled}[/]" if unfilled > 0 else ""
-        return Text.from_markup(f"[{TEXT_MUTED}][[/]{fill_str}{empty_str}[{TEXT_MUTED}]][/]")
+        filled = int(round((self.volume / 100.0) * (w - 1)))
+        unfilled = max(0, (w - 1) - filled)
+        return Text.from_markup(render_arcane_bar(filled, unfilled))
 
 
 class _MuteLabel(Widget):
@@ -815,52 +777,8 @@ class _MuteLabel(Widget):
         return Text.from_markup(f"[{TEXT_MUTED}][M: MUTE][/]")
 
 
-class _OutputRouteBox(Widget):
-    """Non-focusable clickable audio output route selector."""
-
-    can_focus = False
-
-    DEFAULT_CSS = f"""
-    _OutputRouteBox {{
-        width: 100%;
-        height: 4;
-        background: {BG_ELEVATED};
-        border: round {BORDER_SLATE};
-        padding: 0 1;
-    }}
-    """
-
-    def __init__(self, on_cycle: Optional[Callable[[], None]] = None, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
-        self.on_cycle = on_cycle
-        self.device_label: str = "MPV // Default Output"
-
-    def set_device(self, label: str) -> None:
-        cleaned = label.strip() if isinstance(label, str) else ""
-        cleaned = cleaned or "MPV // Default Output"
-        if cleaned != self.device_label:
-            self.device_label = cleaned
-            self.refresh()
-
-    def on_click(self, event: events.Click) -> None:
-        event.stop()
-        if self.on_cycle:
-            self.on_cycle()
-
-    def render(self) -> Text:
-        w = max(14, self.size.width or 30)
-        left = "OUTPUT ROUTE" if w >= 24 else "OUTPUT"
-        right = "[CLICK TO CYCLE]" if w >= 30 else "[CYCLE]"
-        gap = max(1, w - len(left) - len(right))
-        line1 = f"[bold {TEXT_MUTED}]{left}[/]{' ' * gap}[{TEXT_MUTED}]{markup_escape(right)}[/]"
-        dev_budget = max(4, w - 2)
-        dev = self.device_label if len(self.device_label) <= dev_budget else self.device_label[: max(1, dev_budget - 1)] + "…"
-        line2 = f"[bold {AMBER_CORE}]◈[/] [{TEXT_MAIN}]{markup_escape(dev)}[/]"
-        return Text.from_markup(f"{line1}\n{line2}")
-
-
 class ControlsPanel(Widget):
-    """Right column: transport buttons, secondary mode toggles, full-width volume, output route."""
+    """Right column: transport buttons, secondary mode toggles, and full-width volume."""
 
     DEFAULT_CSS = f"""
     ControlsPanel {{
@@ -913,10 +831,6 @@ class ControlsPanel(Widget):
         content-align: right middle;
         color: {AMBER_PEAK};
         text-style: bold;
-    }}
-
-    #output-route {{
-        margin-top: 1;
     }}
 
     #controls-spacer {{
@@ -972,7 +886,6 @@ class ControlsPanel(Widget):
                 yield _MuteLabel(on_mute=self.on_mute, id="vol-mute-btn")
                 yield Static("100%", id="vol-pct")
             yield VolumeBar(on_volume=self.on_volume, id="volume-control")
-        yield _OutputRouteBox(on_cycle=self.on_cycle_device, id="output-route")
         yield Static(id="controls-spacer")
         yield Static(id="controls-hint")
 
@@ -1010,7 +923,6 @@ class ControlsPanel(Widget):
             t_row = self.query_one("#transport-row")
             m_row = self.query_one("#mode-row")
             v_box = self.query_one("#volume-box")
-            o_box = self.query_one("#output-route", _OutputRouteBox)
             chips = [
                 self.query_one("#btn-prev", _ClickableChip),
                 self.query_one("#btn-play", _ClickableChip),
@@ -1028,9 +940,6 @@ class ControlsPanel(Widget):
             v_box.styles.height = 2
             v_box.styles.border = "none"
             v_box.styles.margin = (0, 0, 0, 0)
-            o_box.styles.height = 2
-            o_box.styles.border = "none"
-            o_box.styles.margin = (0, 0, 0, 0)
             for c in chips:
                 c.set_compact(True)
         else:
@@ -1040,9 +949,6 @@ class ControlsPanel(Widget):
             v_box.styles.height = 4
             v_box.styles.border = ("round", BORDER_SLATE)
             v_box.styles.margin = (1, 0, 0, 0)
-            o_box.styles.height = 4
-            o_box.styles.border = ("round", BORDER_SLATE)
-            o_box.styles.margin = (1, 0, 0, 0)
             for c in chips:
                 c.set_compact(False)
 
@@ -1104,10 +1010,8 @@ class ControlsPanel(Widget):
         except Exception:
             return
         w = max(14, self.size.width or 32)
-        left = "MEDIA CONTROLS" if w >= 26 else "CONTROLS"
-        right = "AUDIO SINK" if w >= 26 else "SINK"
-        gap = max(1, w - len(left) - len(right))
-        hdr.update(Text.from_markup(f"[bold {AMBER_GLOW}]{left}[/]{' ' * gap}[{TEXT_MUTED}]{right}[/]"), layout=False)
+        left = "MEDIA CONTROLS" if w >= 20 else "CONTROLS"
+        hdr.update(Text.from_markup(f"[bold {AMBER_GLOW}]{left}[/]"), layout=False)
 
     def set_state(
         self,
@@ -1118,7 +1022,7 @@ class ControlsPanel(Widget):
         volume: int,
         device_name: str = "",
     ) -> None:
-        """Synchronize transport, mode, volume, and output device displays."""
+        """Synchronize transport, mode, and volume displays."""
         self._is_playing = bool(is_playing)
         self._shuffle_enabled = bool(shuffle_enabled)
         self._repeat_mode = repeat_mode if repeat_mode in ("off", "all", "one") else "off"
@@ -1130,9 +1034,6 @@ class ControlsPanel(Widget):
             self.query_one("#volume-control", VolumeBar).set_volume(clamped_vol)
             self.query_one("#vol-mute-btn", _MuteLabel).set_muted(clamped_vol == 0)
             self.query_one("#vol-pct", Static).update(f"{clamped_vol:02d}%", layout=False)
-
-            if device_name:
-                self.query_one("#output-route", _OutputRouteBox).set_device(device_name)
         except Exception:
             pass
 
@@ -1149,9 +1050,5 @@ class ControlsPanel(Widget):
             pass
 
     def set_device_label(self, label: str) -> None:
-        """Update output route display label."""
-        if self.is_mounted:
-            try:
-                self.query_one("#output-route", _OutputRouteBox).set_device(label)
-            except Exception:
-                pass
+        """No-op kept for interface compatibility."""
+        return
