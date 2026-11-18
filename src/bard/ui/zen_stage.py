@@ -65,7 +65,7 @@ class ZenStage(Widget):
     }}
 
     QueuePanel {{
-        margin-right: 1;
+        margin-right: 0;
     }}
     """
 
@@ -109,9 +109,7 @@ class ZenStage(Widget):
         with Vertical(id="stage-root"):
             yield SpectrumDeck(on_seek=self._handle_seek, id="spectrum-deck")
             with Horizontal(id="command-deck"):
-                yield ArtifactPanel(id="artifact-panel")
-                yield QueuePanel(on_select_index=self._handle_select_queue_index, id="queue-panel")
-                yield ControlsPanel(
+                yield ArtifactPanel(
                     on_prev=self._handle_prev,
                     on_play_pause=self._handle_play_pause,
                     on_next=self._handle_next,
@@ -119,9 +117,10 @@ class ZenStage(Widget):
                     on_repeat=self._handle_repeat,
                     on_volume=self._handle_volume,
                     on_mute=self._handle_mute,
-                    on_cycle_device=self._handle_cycle_device,
-                    id="controls-panel",
+                    show_controls=True,
+                    id="artifact-panel",
                 )
+                yield QueuePanel(on_select_index=self._handle_select_queue_index, id="queue-panel")
 
     def on_mount(self) -> None:
         self.refresh_stage()

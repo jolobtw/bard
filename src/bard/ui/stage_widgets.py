@@ -31,11 +31,13 @@ from bard.ui.spectrum import format_ms, render_arcane_bar
 
 
 class ArtifactPanel(Widget):
-    """Left column: framed album art (or sigil placeholder) and track metadata."""
+    """Left column: Now Playing header, album art, track metadata, and embedded media controls."""
 
     DEFAULT_CSS = f"""
     ArtifactPanel {{
-        width: 1fr;
+        width: 40%;
+        min-width: 36;
+        max-width: 48;
         height: 100%;
         background: {BG_PANEL};
         border: round {BORDER_SLATE};
@@ -92,8 +94,27 @@ class ArtifactPanel(Widget):
     }}
     """
 
-    def __init__(self, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        on_prev: Optional[Callable[[], None]] = None,
+        on_play_pause: Optional[Callable[[], None]] = None,
+        on_next: Optional[Callable[[], None]] = None,
+        on_shuffle: Optional[Callable[[], None]] = None,
+        on_repeat: Optional[Callable[[], None]] = None,
+        on_volume: Optional[Callable[[int], None]] = None,
+        on_mute: Optional[Callable[[], None]] = None,
+        show_controls: bool = True,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
+        self.on_prev = on_prev
+        self.on_play_pause = on_play_pause
+        self.on_next = on_next
+        self.on_shuffle = on_shuffle
+        self.on_repeat = on_repeat
+        self.on_volume = on_volume
+        self.on_mute = on_mute
+        self.show_controls = show_controls
         self.playback_data: Optional[Dict[str, Any]] = None
         self.queue_pos: Tuple[int, int] = (0, 0)
         self.audio_info: Dict[str, Any] = {}
@@ -116,6 +137,19 @@ class ArtifactPanel(Widget):
         yield Static(id="track-meta")
         yield Static(id="track-source")
         yield Static(id="track-codec")
+        if self.show_controls:
+            yield ControlsPanel(
+                on_prev=self.on_prev,
+                on_play_pause=self.on_play_pause,
+                on_next=self.on_next,
+                on_shuffle=self.on_shuffle,
+                on_repeat=self.on_repeat,
+                on_volume=self.on_volume,
+                on_mute=self.on_mute,
+                show_header=False,
+                embedded=True,
+                id="controls-panel",
+            )
 
     def on_mount(self) -> None:
         self.refresh_panel()
@@ -143,7 +177,18 @@ class ArtifactPanel(Widget):
         w = avail_width if avail_width is not None else (self.size.width or 36)
         h = avail_height if avail_height is not None else (self.size.height or 24)
         art_w = max(12, min(32, w - 4))
-        art_h = max(3, min(14, h - 8))
+        if self.show_controls:
+            try:
+                app_h = self.app.size.height if self.app else 40
+            except Exception:
+                app_h = 40
+            controls_h = 5 if (app_h < 34 or h < 24) else 10
+            avail_h = h - controls_h - 7
+            if avail_h < 3:
+                return (art_w, 0)
+            art_h = min(14, avail_h)
+        else:
+            art_h = max(3, min(14, h - 8))
         return (art_w, art_h)
 
     def set_track(
@@ -167,7 +212,7 @@ class ArtifactPanel(Widget):
 
     def _title_width(self) -> int:
         w = self.size.width or 36
-        return max(12, w - 2)
+        return max(12, w)
 
     def _slice_marquee(self, title: str, width: int) -> str:
         if len(title) <= width:
@@ -238,7 +283,7 @@ class ArtifactPanel(Widget):
         w = max(14, self.size.width or 32)
         idx, total = self.queue_pos
         count_str = f"{idx:02d}/{total:02d}" if total > 0 and idx > 0 else "--/--"
-        hdr_label = "ARTIFACT COVER" if w >= 22 else "ARTIFACT"
+        hdr_label = "NOW PLAYING" if w >= 18 else "PLAYING"
         gap = max(1, w - len(hdr_label) - len(count_str))
         hdr_w.update(
             Text.from_markup(f"[bold {AMBER_GLOW}]{hdr_label}[/]{' ' * gap}[{TEXT_MUTED}]{count_str}[/]"),
@@ -248,7 +293,7 @@ class ArtifactPanel(Widget):
 
         art_w, art_h = self.get_art_dimensions()
         art_url = str(self.playback_data.get("album_art_url", "")) if self.playback_data else ""
-        if art_url:
+        if art_url and art_h > 0:
             if art_url != self._last_art_url or self._last_dims != (art_w, art_h) or not self._cached_art_ansi:
                 self._last_art_url = art_url
                 self._last_dims = (art_w, art_h)
@@ -864,6 +909,8 @@ class ControlsPanel(Widget):
         on_volume: Optional[Callable[[int], None]] = None,
         on_mute: Optional[Callable[[], None]] = None,
         on_cycle_device: Optional[Callable[[], None]] = None,
+        show_header: bool = True,
+        embedded: bool = False,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -875,13 +922,16 @@ class ControlsPanel(Widget):
         self.on_volume = on_volume
         self.on_mute = on_mute
         self.on_cycle_device = on_cycle_device
+        self.show_header = show_header
+        self.embedded = embedded
         self._is_playing: bool = False
         self._shuffle_enabled: bool = False
         self._repeat_mode: str = "off"
         self._compact: bool = False
 
     def compose(self) -> ComposeResult:
-        yield Static(id="controls-header")
+        if self.show_header:
+            yield Static(id="controls-header")
         with Horizontal(id="transport-row"):
             yield _ClickableChip("|◀ PREV", on_press=self.on_prev, id="btn-prev")
             yield _ClickableChip("▶ PLAY", on_press=self.on_play_pause, accent=True, id="btn-play")
@@ -894,10 +944,16 @@ class ControlsPanel(Widget):
                 yield _MuteLabel(on_mute=self.on_mute, id="vol-mute-btn")
                 yield VolumeBar(on_volume=self.on_volume, id="volume-control")
             yield Static("100%", id="vol-pct")
-        yield Static(id="controls-spacer")
+        if not self.embedded:
+            yield Static(id="controls-spacer")
         yield Static(id="controls-hint")
 
     def on_mount(self) -> None:
+        if self.embedded:
+            self.styles.height = "auto"
+            self.styles.border = "none"
+            self.styles.padding = (0, 0)
+            self.styles.margin = (1, 0, 0, 0)
         self._apply_responsive_layout()
         self._render_header()
         self._render_buttons()
@@ -924,7 +980,7 @@ class ControlsPanel(Widget):
             app_h = self.app.size.height if self.app else 40
         except Exception:
             app_h = 40
-        compact_v = app_h < 32 or (self.size.height and self.size.height < 18)
+        compact_v = app_h < 34 or (not self.embedded and self.size.height and self.size.height < 18)
         self._compact = self._is_compact()
 
         try:
@@ -942,6 +998,12 @@ class ControlsPanel(Widget):
             return
 
         if compact_v:
+            if self.embedded:
+                self.styles.margin = (0, 0, 0, 0)
+                try:
+                    self.query_one("#controls-hint", Static).display = False
+                except Exception:
+                    pass
             t_row.styles.height = 1
             t_row.styles.margin = (0, 0, 0, 0)
             m_row.styles.height = 1
@@ -951,8 +1013,14 @@ class ControlsPanel(Widget):
             for c in chips:
                 c.set_compact(True)
         else:
+            if self.embedded:
+                self.styles.margin = (1, 0, 0, 0)
+                try:
+                    self.query_one("#controls-hint", Static).display = True
+                except Exception:
+                    pass
             t_row.styles.height = 3
-            t_row.styles.margin = (1, 0, 0, 0)
+            t_row.styles.margin = (0, 0, 0, 0) if self.embedded else (1, 0, 0, 0)
             m_row.styles.height = 3
             v_box.styles.height = 2
             v_box.styles.border = "none"
@@ -1011,7 +1079,7 @@ class ControlsPanel(Widget):
         hint_w.update(Text.from_markup(markup), layout=False)
 
     def _render_header(self) -> None:
-        if not self.is_mounted:
+        if not self.is_mounted or not self.show_header:
             return
         try:
             hdr = self.query_one("#controls-header", Static)

@@ -44,7 +44,10 @@ def test_artifact_panel_empty_active_codec_and_marquee():
             )
             await pilot.pause()
 
-            assert "01/05" in str(panel.query_one("#art-header", Static).render())
+            hdr_text = str(panel.query_one("#art-header", Static).render())
+            assert "NOW PLAYING" in hdr_text
+            assert "ARTIFACT COVER" not in hdr_text
+            assert "01/05" in hdr_text
             assert "Chronomancer" in str(panel.query_one("#track-meta", Static).render())
             assert "Codex" in str(panel.query_one("#track-source", Static).render())
             codec_text = str(panel.query_one("#track-codec", Static).render())
@@ -309,6 +312,15 @@ def test_compact_80x24_no_clipping():
             assert len(stage.query("#status-footer")) == 0
             assert len(stage.query("#output-route")) == 0
             assert len(stage.query("#queue-footer")) == 0
+            assert len(stage.query("#controls-header")) == 0
+
+            from bard.ui.stage_widgets import ArtifactPanel, ControlsPanel, QueuePanel
+            deck = stage.query_one("#command-deck")
+            assert [type(c) for c in deck.children] == [ArtifactPanel, QueuePanel]
+            art_panel = stage.query_one(ArtifactPanel)
+            queue_panel = stage.query_one(QueuePanel)
+            assert art_panel.query_one(ControlsPanel).id == "controls-panel"
+            assert queue_panel.size.width > art_panel.size.width
 
         app_compact = TestApp()
         async with app_compact.run_test(size=(80, 24)) as pilot:

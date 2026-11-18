@@ -104,7 +104,11 @@ def test_zen_stage_responsive_layout_and_art_sizing():
                 })
                 await pilot.pause()
                 w, h = stage.get_art_dimensions()
-                assert w >= 12 and h >= 3
+                assert w >= 12
+                if dims == (80, 24):
+                    assert h >= 0
+                else:
+                    assert h >= 3
 
     asyncio.run(_test())
 
