@@ -11,7 +11,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from bard.audio_engine import AudioEngine
 
@@ -309,6 +309,64 @@ class AudioPlayer:
                 return False
 
         return True
+
+    def get_audio_info(self) -> Dict[str, Any]:
+        """Return active stream codec and sample rate from mpv, or {} if unavailable."""
+        if self._process is None or self._process.poll() is not None:
+            return {}
+
+        info: Dict[str, Any] = {}
+        resp_codec = self._send_command(["get_property", "audio-codec-name"])
+        if resp_codec and resp_codec.get("error") == "success" and resp_codec.get("data"):
+            info["codec"] = str(resp_codec["data"]).strip()
+
+        resp_rate = self._send_command(["get_property", "audio-params/samplerate"])
+        if resp_rate and resp_rate.get("error") == "success" and resp_rate.get("data") is not None:
+            try:
+                info["samplerate"] = int(resp_rate["data"])
+            except (TypeError, ValueError):
+                pass
+        return info
+
+    def get_audio_devices(self) -> List[Dict[str, str]]:
+        """Return available mpv audio output devices as [{'name': ..., 'description': ...}]."""
+        if self._process is None or self._process.poll() is not None:
+            return []
+
+        resp = self._send_command(["get_property", "audio-device-list"])
+        if not resp or resp.get("error") != "success":
+            return []
+
+        raw_list = resp.get("data")
+        if not isinstance(raw_list, list):
+            return []
+
+        devices: List[Dict[str, str]] = []
+        for entry in raw_list:
+            if not isinstance(entry, dict):
+                continue
+            name = str(entry.get("name") or "").strip()
+            if not name:
+                continue
+            desc = str(entry.get("description") or name).strip()
+            devices.append({"name": name, "description": desc})
+        return devices
+
+    def get_current_audio_device(self) -> str:
+        """Return active mpv audio-device identifier, or '' if unavailable."""
+        if self._process is None or self._process.poll() is not None:
+            return ""
+        resp = self._send_command(["get_property", "audio-device"])
+        if resp and resp.get("error") == "success" and resp.get("data"):
+            return str(resp["data"]).strip()
+        return ""
+
+    def set_audio_device(self, device_name: str) -> bool:
+        """Switch mpv audio output device via IPC."""
+        if not device_name or self._process is None or self._process.poll() is not None:
+            return False
+        resp = self._send_command(["set_property", "audio-device", device_name])
+        return bool(resp and resp.get("error") == "success")
 
     def close(self) -> None:
         """Terminate the mpv subprocess cleanly and remove socket files if any."""

@@ -278,4 +278,56 @@ def test_player_assign_to_job_safe_on_mock_or_invalid_pid():
         player._assign_to_job()
 
 
+def test_player_audio_info_and_devices():
+    with patch("bard.audio_player.subprocess.Popen") as mock_popen:
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = None
+        mock_popen.return_value = mock_proc
+        player = AudioPlayer(binary_path="dummy_mpv")
+
+        def mock_send(cmd):
+            if cmd == ["get_property", "audio-codec-name"]:
+                return {"data": "opus", "error": "success"}
+            if cmd == ["get_property", "audio-params/samplerate"]:
+                return {"data": 48000, "error": "success"}
+            if cmd == ["get_property", "audio-device-list"]:
+                return {
+                    "data": [
+                        {"name": "auto", "description": "Autoselect device"},
+                        {"name": "wasapi/{abc}", "description": "Speakers (Realtek)"},
+                        {"description": "missing name"},
+                    ],
+                    "error": "success",
+                }
+            if cmd == ["get_property", "audio-device"]:
+                return {"data": "wasapi/{abc}", "error": "success"}
+            if cmd == ["set_property", "audio-device", "wasapi/{abc}"]:
+                return {"error": "success"}
+            return {"error": "property unavailable"}
+
+        with patch.object(player, "_send_command", side_effect=mock_send):
+            assert player.get_audio_info() == {"codec": "opus", "samplerate": 48000}
+            assert player.get_audio_devices() == [
+                {"name": "auto", "description": "Autoselect device"},
+                {"name": "wasapi/{abc}", "description": "Speakers (Realtek)"},
+            ]
+            assert player.get_current_audio_device() == "wasapi/{abc}"
+            assert player.set_audio_device("wasapi/{abc}") is True
+            assert player.set_audio_device("bad-dev") is False
+
+
+def test_player_audio_info_safe_defaults_when_disconnected():
+    with patch("bard.audio_player.subprocess.Popen") as mock_popen:
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = 1
+        mock_popen.return_value = mock_proc
+        player = AudioPlayer(binary_path="dummy_mpv")
+
+        assert player.get_audio_info() == {}
+        assert player.get_audio_devices() == []
+        assert player.get_current_audio_device() == ""
+        assert player.set_audio_device("auto") is False
+
+
+
 
