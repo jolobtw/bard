@@ -218,8 +218,18 @@ def test_controls_panel_non_focusable_buttons_volume_and_output_route():
             assert "SHUF: ON" in str(panel.query_one("#btn-shuffle").render())
             assert "●" in str(panel.query_one("#volume-control", VolumeBar).render())
 
-            # VolumeBar mute toggle & slider drag/click clamping (single click fires once)
+            # VolumeBar speaker icon on left (unmuted 󰕾, muted 󰖁), no [M: MUTE] helper text
             vol_bar = panel.query_one("#volume-control", VolumeBar)
+            mute_btn = panel.query_one("#vol-mute-btn")
+            assert "M: MUTE" not in str(mute_btn.render())
+            assert "󰕾" in mute_btn.render().plain
+            assert mute_btn.region.y == vol_bar.region.y
+            assert mute_btn.region.x < vol_bar.region.x
+
+            panel.set_volume(0)
+            await pilot.pause()
+            assert "󰖁" in mute_btn.render().plain
+
             await pilot.click("#vol-mute-btn")
             assert "mute" in calls
 

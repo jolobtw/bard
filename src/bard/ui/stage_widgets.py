@@ -688,7 +688,7 @@ class VolumeBar(Widget):
 
     DEFAULT_CSS = f"""
     VolumeBar {{
-        width: 100%;
+        width: 1fr;
         height: 1;
         background: {BG_ELEVATED};
     }}
@@ -750,15 +750,15 @@ class VolumeBar(Widget):
 
 
 class _MuteLabel(Widget):
-    """Non-focusable clickable mute toggle label."""
+    """Non-focusable clickable speaker mute/unmute icon."""
 
     can_focus = False
 
     DEFAULT_CSS = f"""
     _MuteLabel {{
-        width: 1fr;
+        width: 3;
         height: 1;
-        content-align: center middle;
+        content-align: left middle;
         background: {BG_ELEVATED};
     }}
     """
@@ -767,10 +767,21 @@ class _MuteLabel(Widget):
         super().__init__(**kwargs)
         self.on_mute = on_mute
         self.is_muted = False
+        self._hovered = False
 
     def set_muted(self, muted: bool) -> None:
         if self.is_muted != muted:
             self.is_muted = muted
+            self.refresh()
+
+    def on_mouse_move(self, event: events.MouseMove) -> None:
+        if not self._hovered:
+            self._hovered = True
+            self.refresh()
+
+    def on_leave(self, event: events.Leave) -> None:
+        if self._hovered:
+            self._hovered = False
             self.refresh()
 
     def on_click(self, event: events.Click) -> None:
@@ -780,8 +791,9 @@ class _MuteLabel(Widget):
 
     def render(self) -> Text:
         if self.is_muted:
-            return Text.from_markup(f"[bold {AMBER_CORE}][M: MUTED][/]")
-        return Text.from_markup(f"[{TEXT_MUTED}][M: MUTE][/]")
+            return Text.from_markup(f"[bold {AMBER_CORE}]󰖁[/] ")
+        color = AMBER_PEAK if self._hovered else TEXT_MAIN
+        return Text.from_markup(f"[{color}]󰕾[/] ")
 
 
 class ControlsPanel(Widget):
@@ -826,8 +838,13 @@ class ControlsPanel(Widget):
         height: 1;
     }}
 
+    #volume-bar-row {{
+        width: 100%;
+        height: 1;
+    }}
+
     #vol-label {{
-        width: auto;
+        width: 1fr;
         height: 1;
         color: {TEXT_MUTED};
     }}
@@ -890,9 +907,10 @@ class ControlsPanel(Widget):
         with Vertical(id="volume-box"):
             with Horizontal(id="volume-header-row"):
                 yield Static("[ VOL ]", id="vol-label")
-                yield _MuteLabel(on_mute=self.on_mute, id="vol-mute-btn")
                 yield Static("100%", id="vol-pct")
-            yield VolumeBar(on_volume=self.on_volume, id="volume-control")
+            with Horizontal(id="volume-bar-row"):
+                yield _MuteLabel(on_mute=self.on_mute, id="vol-mute-btn")
+                yield VolumeBar(on_volume=self.on_volume, id="volume-control")
         yield Static(id="controls-spacer")
         yield Static(id="controls-hint")
 
