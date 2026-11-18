@@ -530,26 +530,26 @@ def test_app_transport_buttons_clickable_in_app(tmp_path):
         app.current_index = 0
         app.current_track = t1
 
-        async with app.run_test(size=(100, 40)) as pilot:
-            await pilot.click("#transport-controls", offset=(6, 3))   # Shuffle (row 3)
+        async with app.run_test(size=(110, 40)) as pilot:
+            await pilot.click("#btn-shuffle")
             await pilot.pause()
             assert app.shuffle_enabled is True
 
-            await pilot.click("#transport-controls", offset=(10, 3))  # Repeat (row 3)
+            await pilot.click("#btn-repeat")
             await pilot.pause()
             assert app.repeat_mode == "all"
 
-            await pilot.click("#transport-controls", offset=(8, 1))   # Play/Pause pill
+            await pilot.click("#btn-play")
             await pilot.pause()
             player.pause.assert_called_once()
 
-            await pilot.click("#transport-controls", offset=(14, 1))  # Next
+            await pilot.click("#btn-next")
             await pilot.pause()
             await asyncio.sleep(0.1)
             assert app.current_index == 1
             assert app.current_track == t2
 
-            await pilot.click("#transport-controls", offset=(1, 1))   # Prev
+            await pilot.click("#btn-prev")
             await pilot.pause()
             await asyncio.sleep(0.1)
             assert app.current_index == 0
@@ -701,26 +701,26 @@ def test_app_transport_buttons_clickable_in_app(tmp_path):
         app.current_index = 0
         app.current_track = t1
 
-        async with app.run_test(size=(100, 40)) as pilot:
-            await pilot.click("#transport-controls", offset=(6, 3))   # Shuffle (row 3)
+        async with app.run_test(size=(110, 40)) as pilot:
+            await pilot.click("#btn-shuffle")
             await pilot.pause()
             assert app.shuffle_enabled is True
 
-            await pilot.click("#transport-controls", offset=(10, 3))  # Repeat (row 3)
+            await pilot.click("#btn-repeat")
             await pilot.pause()
             assert app.repeat_mode == "all"
 
-            await pilot.click("#transport-controls", offset=(8, 1))   # Play/Pause pill
+            await pilot.click("#btn-play")
             await pilot.pause()
             player.pause.assert_called_once()
 
-            await pilot.click("#transport-controls", offset=(14, 1))  # Next
+            await pilot.click("#btn-next")
             await pilot.pause()
             await asyncio.sleep(0.1)
             assert app.current_index == 1
             assert app.current_track == t2
 
-            await pilot.click("#transport-controls", offset=(1, 1))   # Prev
+            await pilot.click("#btn-prev")
             await pilot.pause()
             await asyncio.sleep(0.1)
             assert app.current_index == 0
@@ -772,6 +772,96 @@ def test_action_cycle_repeat_and_playback_modes(tmp_path):
     player.is_playing.return_value = False
     app.on_progress_tick()
     app.play_track.assert_called_once_with(t2)
+
+
+def test_app_queue_sync_filter_two_step_esc_and_space_in_input(tmp_path):
+    async def _run():
+        cfg = BardConfig(config_path=tmp_path / "config.json")
+        client = MagicMock()
+        client.get_stream_url.side_effect = lambda tid: f"https://audio/{tid}"
+        player = MagicMock()
+        player.play.return_value = True
+        player.is_playing.return_value = True
+        player.get_position.return_value = 0.0
+        player.get_duration.return_value = 120.0
+        player.get_volume.return_value = 80
+        player.get_audio_info.return_value = {"codec": "opus", "samplerate": 48000}
+        player.get_audio_devices.return_value = [{"name": "auto", "description": "Default"}]
+        player.get_current_audio_device.return_value = "auto"
+
+        app = BardApp(cfg, client, player=player)
+        t1 = Track("1", "Track One", "Artist A", "Album", 120, "")
+        t2 = Track("2", "Track Two", "Artist B", "Album", 150, "")
+        t3 = Track("3", "Night Sky", "Artist C", "Album", 180, "")
+
+        async with app.run_test(size=(110, 40)) as pilot:
+            app.drawer_widget.tracks = [t1, t2, t3]
+            app.handle_drawer_play(t1)
+            await asyncio.sleep(0.1)
+            await pilot.pause()
+
+            # Focus queue filter with '/' and type 'track t' (includes space -> must NOT pause)
+            await pilot.press("slash")
+            await pilot.pause()
+            assert app.stage_widget.is_queue_filter_focused() is True
+            for ch in ("t", "r", "a", "c", "k", "space", "t"):
+                await pilot.press(ch)
+            await pilot.pause()
+            player.pause.assert_not_called()
+            assert app.stage_widget.has_queue_filter_text() is True
+
+            # First Escape blurs filter while keeping query active so Enter selects filtered Track Two
+            await pilot.press("escape")
+            await pilot.pause()
+            assert app.stage_widget.is_queue_filter_focused() is False
+            assert app.stage_widget.has_queue_filter_text() is True
+            assert app.stage_widget.get_selected_queue_index() == 1
+
+            await pilot.press("enter")
+            await asyncio.sleep(0.1)
+            await pilot.pause()
+            assert app.current_track == t2
+
+            # Second Escape clears filter when drawer is closed and filter is unfocused
+            await pilot.press("escape")
+            await pilot.pause()
+            assert app.stage_widget.has_queue_filter_text() is False
+
+            # J / K navigate queue when drawer closed
+            await pilot.press("j")
+            await pilot.pause()
+            assert app.stage_widget.get_selected_queue_index() >= 1
+
+    asyncio.run(_run())
+
+
+def test_app_cycle_output_device(tmp_path):
+    async def _run():
+        cfg = BardConfig(config_path=tmp_path / "config.json")
+        client = MagicMock()
+        player = MagicMock()
+        player.is_playing.return_value = False
+        player.get_position.return_value = 0.0
+        player.get_duration.return_value = 0.0
+        player.get_volume.return_value = 75
+        player.get_audio_info.return_value = {}
+        player.get_audio_devices.return_value = [
+            {"name": "auto", "description": "Autoselect device"},
+            {"name": "wasapi/{spk}", "description": "Speakers (Realtek)"},
+        ]
+        player.get_current_audio_device.return_value = "auto"
+        player.set_audio_device.return_value = True
+
+        app = BardApp(cfg, client, player=player)
+        async with app.run_test(size=(110, 40)) as pilot:
+            await pilot.pause()
+            app.action_cycle_output_device()
+            await pilot.pause()
+            player.set_audio_device.assert_called_with("wasapi/{spk}")
+            assert "Speakers (Realtek)" in str(app.stage_widget.query_one("#output-route").render())
+
+    asyncio.run(_run())
+
 
 
 

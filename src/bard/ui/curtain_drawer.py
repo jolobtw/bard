@@ -298,6 +298,13 @@ class CurtainDrawer(Widget):
         """Close drawer."""
         self.remove_class("-visible")
         self.close_search()
+        if self.is_mounted and self.app:
+            try:
+                focused = self.app.focused
+                if focused is not None and self in focused.ancestors_with_self:
+                    self.app.set_focus(None)
+            except Exception:
+                pass
 
     def is_open(self) -> bool:
         return self.has_class("-visible")

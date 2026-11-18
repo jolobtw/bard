@@ -6,9 +6,10 @@ import logging
 import random
 import webbrowser
 from typing import Any, Dict, List, Optional
-from textual import work
+from textual import events, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
+from textual.widgets import Input
 
 from bard.audio_player import AudioPlayer
 from bard.config import BardConfig
@@ -27,13 +28,13 @@ class BardApp(App):
 
     CSS = """
     Screen {
-        background: #13141C;
+        background: #0D0E11;
         layers: base overlay;
     }
     """
 
     BINDINGS = [
-        Binding("space", "toggle_playback", "Play/Pause", priority=True),
+        Binding("space", "toggle_playback", "Play/Pause"),
         Binding("tab", "toggle_drawer", "Explore", priority=True),
         Binding("escape", "close_drawer", "Close", priority=True),
         Binding("n", "next_track", "Next"),
@@ -45,6 +46,14 @@ class BardApp(App):
         Binding("=", "volume_up", "Vol +", show=False),
         Binding("-", "volume_down", "Vol -"),
         Binding("q", "quit", "Quit"),
+        Binding("j", "queue_down", "Queue Down", show=False),
+        Binding("k", "queue_up", "Queue Up", show=False),
+        Binding("enter", "queue_play_selected", "Play Selected", show=False),
+        Binding("slash", "focus_queue_filter", "Filter Queue", show=False),
+        Binding("left", "seek_backward", "Seek -10s", show=False),
+        Binding("h", "seek_backward", "Seek -10s", show=False),
+        Binding("right", "seek_forward", "Seek +10s", show=False),
+        Binding("l", "seek_forward", "Seek +10s", show=False),
     ]
 
     def __init__(
@@ -68,6 +77,8 @@ class BardApp(App):
             on_seek=self.action_seek_to,
             on_volume=self.action_set_volume,
             on_mute=self.action_toggle_mute,
+            on_select_queue_index=self.play_track_at_index,
+            on_cycle_device=self.action_cycle_output_device,
         )
         self.drawer_widget = CurtainDrawer(
             self.client,
@@ -96,19 +107,45 @@ class BardApp(App):
 
     def compose(self) -> ComposeResult:
         yield self.header_widget
-        yield self.drawer_widget
         yield self.stage_widget
+        yield self.drawer_widget
 
     def on_mount(self) -> None:
         """Start timers and set initial state."""
+        self.drawer_widget.disabled = True
+        self.set_focus(None)
+        self.call_after_refresh(self.set_focus, None)
         self._tick_timer = self.set_interval(1.0, self.on_progress_tick)
         self._sync_timer = self.set_interval(5.0, self.sync_playback_state)
         self.locate_bard_device()
         self.sync_playback_state()
 
     def locate_bard_device(self) -> None:
-        """Set local audio output name."""
+        """Set local audio output name and initial sink label."""
         self.stage_widget.set_device_name("YouTube Music / Standalone")
+        self._refresh_audio_telemetry()
+
+    def _refresh_audio_telemetry(self) -> None:
+        """Refresh real mpv codec/samplerate and active output device label."""
+        if not self.player:
+            return
+        try:
+            if hasattr(self.player, "get_audio_info"):
+                info = self.player.get_audio_info()
+                if isinstance(info, dict):
+                    self.stage_widget.set_audio_info(info)
+            if hasattr(self.player, "get_current_audio_device"):
+                cur_name = self.player.get_current_audio_device()
+                devices = self.player.get_audio_devices() if hasattr(self.player, "get_audio_devices") else []
+                label = cur_name
+                for d in devices:
+                    if d.get("name") == cur_name:
+                        label = d.get("description") or cur_name
+                        break
+                if label:
+                    self.stage_widget.set_audio_device(label)
+        except Exception:
+            pass
 
     def on_progress_tick(self) -> None:
         """Smooth 1s ticker for progress bar and track auto-advance."""
@@ -173,6 +210,7 @@ class BardApp(App):
             self.stage_widget._current_progress_ms = int(pos * 1000)
             self.header_widget.update_status(is_playing=is_playing, device_name="YouTube Music")
             self.stage_widget.refresh_stage()
+        self._refresh_audio_telemetry()
 
     def handle_drawer_play(self, track: Any) -> None:
         """Handle track selection from drawer."""
@@ -213,11 +251,14 @@ class BardApp(App):
             self._original_queue = [track_obj]
             self.current_index = 0
 
+        self.stage_widget.set_queue(self.queue, self.current_index)
         self.play_track(track_obj)
 
     def handle_shuffle_play(self, item: Dict[str, Any]) -> None:
         """Handle shuffle play request for a playlist or category."""
         self.drawer_widget.hide()
+        self.drawer_widget.disabled = True
+        self.set_focus(None)
         playlist_id = item.get("id") or ""
         title = item.get("title") or "Playlist"
         self.notify(f"✦ Shuffling {title}...", title="Bard Shuffle", severity="information", timeout=3)
@@ -272,6 +313,7 @@ class BardApp(App):
         self.shuffle_enabled = True
         self.stage_widget.set_shuffle(True)
         self.current_index = 0
+        self.stage_widget.set_queue(self.queue, self.current_index)
         if hasattr(self.drawer_widget, "tracks"):
             self.drawer_widget.tracks = list(tracks)
         self.play_track(self.queue[0])
@@ -379,11 +421,53 @@ class BardApp(App):
 
     def _on_track_started(self, track_data: Dict[str, Any]) -> None:
         """Update UI widgets when playback starts."""
+        if not self.drawer_widget.is_open():
+            self.drawer_widget.disabled = True
+        self.stage_widget.set_queue(self.queue, self.current_index)
         self.stage_widget.update_track(track_data)
+        self._refresh_audio_telemetry()
         self.header_widget.update_status(is_playing=True, device_name="YouTube Music")
+
+    def _focused_is_input(self) -> bool:
+        """Return True if mounted screen focus is currently inside a text Input."""
+        if not self.is_mounted:
+            return False
+        try:
+            return isinstance(self.focused, Input)
+        except Exception:
+            return False
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        """Gate global and stage-only keybindings when typing in Inputs or browsing Drawer."""
+        stage_actions = {
+            "queue_down",
+            "queue_up",
+            "queue_play_selected",
+            "focus_queue_filter",
+            "seek_backward",
+            "seek_forward",
+        }
+        typing_blocked = stage_actions | {
+            "toggle_playback",
+            "next_track",
+            "prev_track",
+            "toggle_shuffle",
+            "cycle_repeat",
+            "toggle_mute",
+            "volume_up",
+            "volume_down",
+            "quit",
+        }
+        if self._focused_is_input() and action in typing_blocked:
+            return False
+        if self.drawer_widget.is_open() and action in stage_actions:
+            return False
+        return True
 
     def action_toggle_playback(self) -> None:
         """Play or pause local playback."""
+        if self._focused_is_input():
+            return
         if self.player:
             try:
                 if self.player.is_playing():
@@ -490,6 +574,7 @@ class BardApp(App):
                     except ValueError:
                         matching = [i for i, t in enumerate(self.queue) if t.id == self.current_track.id]
                         self.current_index = matching[0] if matching else 0
+        self.stage_widget.set_queue(self.queue, self.current_index)
         self.stage_widget.set_shuffle(self.shuffle_enabled)
 
     def action_cycle_repeat(self) -> None:
@@ -574,13 +659,81 @@ class BardApp(App):
 
     def action_toggle_drawer(self) -> None:
         """Toggle left curtain drawer."""
-        self.drawer_widget.toggle()
+        if self.drawer_widget.is_open():
+            self.drawer_widget.toggle()
+            self.drawer_widget.disabled = True
+            self.set_focus(None)
+        else:
+            self.drawer_widget.disabled = False
+            self.drawer_widget.toggle()
 
     def action_close_drawer(self) -> None:
-        """Close drawer if open."""
+        """Close drawer if open, or handle two-step Esc for the queue filter."""
         if self.drawer_widget.is_open():
             self.drawer_widget.hide()
-            self.stage_widget.focus()
+            self.drawer_widget.disabled = True
+            self.set_focus(None)
+        elif self.stage_widget.is_queue_filter_focused():
+            self.stage_widget.blur_queue_filter(clear=False)
+        elif self.stage_widget.has_queue_filter_text():
+            self.stage_widget.clear_queue_filter()
+
+    def action_cycle_output_device(self) -> None:
+        """Cycle through available mpv audio output devices."""
+        if not self.player or not hasattr(self.player, "get_audio_devices"):
+            return
+        try:
+            devices = self.player.get_audio_devices()
+            if not devices:
+                return
+            current = self.player.get_current_audio_device() if hasattr(self.player, "get_current_audio_device") else ""
+            names = [d.get("name", "") for d in devices]
+            cur_idx = names.index(current) if current in names else -1
+            next_dev = devices[(cur_idx + 1) % len(devices)]
+            if next_dev.get("name") and self.player.set_audio_device(next_dev["name"]):
+                label = next_dev.get("description") or next_dev["name"]
+                self.stage_widget.set_audio_device(label)
+        except Exception:
+            pass
+
+    def action_queue_down(self) -> None:
+        """Move queue cursor down one row."""
+        self.stage_widget.move_queue_cursor(1)
+
+    def action_queue_up(self) -> None:
+        """Move queue cursor up one row."""
+        self.stage_widget.move_queue_cursor(-1)
+
+    def action_queue_play_selected(self) -> None:
+        """Play the track currently highlighted by the queue cursor."""
+        idx = self.stage_widget.get_selected_queue_index()
+        if idx is not None:
+            self.play_track_at_index(idx)
+
+    def action_focus_queue_filter(self) -> None:
+        """Focus the live queue filter input."""
+        self.stage_widget.focus_queue_filter()
+
+    def action_seek_backward(self) -> None:
+        """Seek backward 10 seconds."""
+        self._seek_relative(-10.0)
+
+    def action_seek_forward(self) -> None:
+        """Seek forward 10 seconds."""
+        self._seek_relative(10.0)
+
+    def _seek_relative(self, delta_seconds: float) -> None:
+        if not self.player:
+            return
+        try:
+            curr = float(self.player.get_position() or 0.0)
+            dur = float(self.player.get_duration() or 0.0)
+            target = max(0.0, curr + delta_seconds)
+            if dur > 0:
+                target = min(dur, target)
+            self.action_seek_to(target)
+        except Exception:
+            pass
 
     def action_quit(self) -> None:
         """Pause playback, terminate audio player cleanly, and exit."""
