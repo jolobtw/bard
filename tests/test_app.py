@@ -909,6 +909,55 @@ def test_app_volume_updates_ui_when_no_track_loaded(tmp_path):
     asyncio.run(_run())
 
 
+def test_app_shuffle_play_toggle_off_restores_original_playlist_order(tmp_path):
+    async def _run():
+        cfg = BardConfig(config_path=tmp_path / "config.json")
+        original = [
+            Track(id=f"p{i}", title=f"Song {i}", artist="Artist", album="Alb", duration_seconds=120, thumbnail_url="")
+            for i in range(5)
+        ]
+        shuffled = [original[3], original[0], original[4], original[1], original[2]]
+        client = MagicMock()
+        client.get_ordered_and_shuffled_playlist_tracks.return_value = (original, shuffled)
+
+        app = BardApp(cfg, client)
+        app.play_track = MagicMock()
+        async with app.run_test(size=(110, 40)) as pilot:
+            app.handle_shuffle_play({"id": "PL1", "title": "My Playlist", "type": "playlist"})
+            await asyncio.sleep(0.1)
+            await pilot.pause()
+
+            assert app.shuffle_enabled is True
+            assert [t.id for t in app.queue] == ["p3", "p0", "p4", "p1", "p2"]
+            app.current_track = original[3]
+            app.current_index = 0
+
+            # Turning shuffle OFF restores the playlist's unshuffled order & locates playing track
+            app.action_toggle_shuffle()
+            await pilot.pause()
+            assert app.shuffle_enabled is False
+            assert [t.id for t in app.queue] == ["p0", "p1", "p2", "p3", "p4"]
+            assert app.current_index == 3
+
+            # Also check curated fallback preserves drawer's unshuffled order
+            app.client = MagicMock()
+            app.client.get_ordered_and_shuffled_playlist_tracks.return_value = ([], [])
+            app.client.get_shuffled_playlist_tracks.return_value = []
+            app.drawer_widget.tracks = list(original)
+            app.handle_shuffle_play({"id": "lofi", "title": "Lo-Fi", "type": "category"})
+            await asyncio.sleep(0.1)
+            await pilot.pause()
+
+            playing = app.queue[0]
+            app.current_track = playing
+            app.action_toggle_shuffle()
+            await pilot.pause()
+            assert [t.id for t in app.queue] == ["p0", "p1", "p2", "p3", "p4"]
+            assert app.current_index == original.index(playing)
+
+    asyncio.run(_run())
+
+
 
 
 

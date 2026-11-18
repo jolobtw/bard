@@ -276,16 +276,39 @@ class BardApp(App):
             return
 
         tracks: List[Track] = []
-        if hasattr(self.client, "get_shuffled_playlist_tracks"):
+        original_tracks: List[Track] = []
+        if hasattr(self.client, "get_ordered_and_shuffled_playlist_tracks"):
             try:
-                tracks = self.client.get_shuffled_playlist_tracks(playlist_id)
+                res = self.client.get_ordered_and_shuffled_playlist_tracks(playlist_id)
+                if (
+                    isinstance(res, tuple)
+                    and len(res) == 2
+                    and isinstance(res[0], list)
+                    and isinstance(res[1], list)
+                ):
+                    original_tracks, tracks = res
+            except Exception as exc:
+                logger.error("Failed to fetch ordered/shuffled tracks for %s: %s", playlist_id, exc)
+
+        if not tracks and hasattr(self.client, "get_shuffled_playlist_tracks"):
+            try:
+                fetched = self.client.get_shuffled_playlist_tracks(playlist_id)
+                if isinstance(fetched, list):
+                    tracks = fetched
             except Exception as exc:
                 logger.error("Failed to fetch shuffled tracks for %s: %s", playlist_id, exc)
 
         if not tracks and hasattr(self.drawer_widget, "tracks") and self.drawer_widget.tracks:
-            import random
-            tracks = list(self.drawer_widget.tracks)
+            original_tracks = list(self.drawer_widget.tracks)
+            tracks = list(original_tracks)
             random.shuffle(tracks)
+
+        if not original_tracks and tracks:
+            drawer_tracks = getattr(self.drawer_widget, "tracks", None)
+            if isinstance(drawer_tracks, list) and drawer_tracks and {t.id for t in drawer_tracks} == {t.id for t in tracks}:
+                original_tracks = list(drawer_tracks)
+            else:
+                original_tracks = list(tracks)
 
         if not tracks:
             if self.is_mounted and hasattr(self, "call_from_thread"):
@@ -306,14 +329,19 @@ class BardApp(App):
             return
 
         if self.is_mounted and hasattr(self, "call_from_thread"):
-            self.call_from_thread(self._start_shuffled_queue, tracks, title)
+            self.call_from_thread(self._start_shuffled_queue, tracks, title, original_tracks)
         else:
-            self._start_shuffled_queue(tracks, title)
+            self._start_shuffled_queue(tracks, title, original_tracks)
 
-    def _start_shuffled_queue(self, tracks: List[Track], title: str) -> None:
-        """Initialize active queue with shuffled tracks and start playback on track 0."""
+    def _start_shuffled_queue(
+        self,
+        tracks: List[Track],
+        title: str,
+        original_tracks: Optional[List[Track]] = None,
+    ) -> None:
+        """Initialize active queue with shuffled tracks while preserving original order."""
         self.queue = list(tracks)
-        self._original_queue = list(tracks)
+        self._original_queue = list(original_tracks) if original_tracks else list(tracks)
         self.current_source = (title or "").lstrip("❤️🔥🕒🔎📋 ").strip() or title
         self.shuffle_enabled = True
         self.stage_widget.set_shuffle(True)

@@ -621,3 +621,18 @@ def test_get_shuffled_playlist_tracks_empty_id():
         assert client.get_shuffled_playlist_tracks("") == []
         assert client.get_shuffled_playlist_tracks(None) == []
 
+
+def test_get_ordered_and_shuffled_playlist_tracks_preserves_original_order():
+    ordered = [
+        Track(id=f"vid_{i}", title=f"Song {i}", artist="Artist", album="Album", duration_seconds=180, thumbnail_url="")
+        for i in range(10)
+    ]
+    with patch("bard.ytmusic_client.YTMusic"):
+        client = YTMusicClient()
+        with patch.object(client, "get_playlist_tracks", return_value=ordered):
+            orig, shuf = client.get_ordered_and_shuffled_playlist_tracks("PL_ORD")
+            assert [t.id for t in orig] == [f"vid_{i}" for i in range(10)]
+            assert {t.id for t in shuf} == {t.id for t in orig}
+            assert len(shuf) == 10
+
+

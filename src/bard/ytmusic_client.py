@@ -7,7 +7,7 @@ from pathlib import Path
 import random
 import re
 import shutil
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import requests
 import yt_dlp
@@ -456,24 +456,29 @@ class YTMusicClient:
 
         return tracks
 
-    def get_shuffled_playlist_tracks(self, playlist_id: str, limit: Optional[int] = None) -> List[Track]:
-        """Retrieve and uniformly shuffle all tracks from a YouTube Music playlist or Liked Songs."""
+    def get_ordered_and_shuffled_playlist_tracks(
+        self, playlist_id: str, limit: Optional[int] = None
+    ) -> Tuple[List[Track], List[Track]]:
+        """Retrieve (original_ordered_tracks, shuffled_tracks) for a playlist or Liked Songs."""
         if not playlist_id:
-            return []
+            return [], []
 
         pid = "LM" if playlist_id in ("liked", "LM") else playlist_id
 
-        # Fetch the full playlist first so every track has an equal chance of being shuffled.
-        # YouTube's watch-playlist shuffle endpoint only returns a capped/biased subset.
+        # Fetch the full playlist first so every track has an equal chance of being shuffled
+        # and the original playlist order can be restored when shuffle is toggled off.
         try:
             if pid == "LM":
                 full_tracks = self.get_liked_songs(limit=limit)
             else:
                 full_tracks = self.get_playlist_tracks(pid, limit=limit)
             if full_tracks:
+                ordered = list(full_tracks)
                 shuffled = list(full_tracks)
                 random.shuffle(shuffled)
-                return shuffled[:limit] if limit is not None else shuffled
+                if limit is not None:
+                    shuffled = shuffled[:limit]
+                return ordered, shuffled
         except Exception as exc:
             logger.debug("Full playlist fetch failed for %s: %s; trying watch endpoint", pid, exc)
 
@@ -497,8 +502,16 @@ class YTMusicClient:
                         break
 
         if tracks:
-            random.shuffle(tracks)
-        return tracks
+            ordered = list(tracks)
+            shuffled = list(tracks)
+            random.shuffle(shuffled)
+            return ordered, shuffled
+        return [], []
+
+    def get_shuffled_playlist_tracks(self, playlist_id: str, limit: Optional[int] = None) -> List[Track]:
+        """Retrieve and uniformly shuffle all tracks from a YouTube Music playlist or Liked Songs."""
+        _, shuffled = self.get_ordered_and_shuffled_playlist_tracks(playlist_id, limit=limit)
+        return shuffled
 
     def get_trending(self, country: str = "US") -> List[Track]:
         """Fetch trending tracks/charts for a given country."""
