@@ -118,6 +118,8 @@ def test_spectrum_deck_play_state_gating_and_rapid_toggle():
             assert "60Hz" not in rendered_playing
             assert any(ch in rendered_playing for ch in "▁▂▃▄▅▆▇█")
             assert len(deck.query("#spectrum-header")) == 0
+            assert len(deck.query("#spectrum-divider")) == 0
+            assert deck.styles.border_top[0] == "round"
 
             # Progress scrubber uses subtle line/thumb bar
             bar_rendered = str(deck.query_one("#progress-bar", SeekBar).render())

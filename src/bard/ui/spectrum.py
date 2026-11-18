@@ -231,27 +231,16 @@ class SpectrumDeck(Widget):
         layout: vertical;
         width: 100%;
         height: auto;
-        background: {BG_OBSIDIAN};
-        border: double {BORDER_SLATE};
+        background: {BG_PANEL};
+        border: round {BORDER_SLATE};
         margin-bottom: 0;
-    }}
-
-    SpectrumDeck.-playing {{
-        border: double {BORDER_AMBER};
     }}
 
     #spectrum-well {{
         width: 100%;
         height: 9;
-        background: {BG_OBSIDIAN};
+        background: {BG_PANEL};
         content-align: center middle;
-    }}
-
-    #spectrum-divider {{
-        width: 100%;
-        height: 1;
-        background: {BG_OBSIDIAN};
-        color: {BORDER_SLATE};
     }}
     """
 
@@ -266,12 +255,10 @@ class SpectrumDeck(Widget):
 
     def compose(self) -> ComposeResult:
         yield Static(id="spectrum-well")
-        yield Static(id="spectrum-divider")
         yield SeekBar(on_seek=self.on_seek, id="progress-bar")
 
     def on_mount(self) -> None:
         self._render_well()
-        self._render_divider()
 
     def on_unmount(self) -> None:
         self._stop_timer()
@@ -280,7 +267,6 @@ class SpectrumDeck(Widget):
         if self.is_mounted:
             self._adjust_well_height()
             self._render_well()
-            self._render_divider()
 
     def _adjust_well_height(self) -> None:
         try:
@@ -323,17 +309,6 @@ class SpectrumDeck(Widget):
         w = well_w or self.size.width or (self.app.size.width - 4 if self.app else 100)
         return max(6, (max(24, w) + 1) // 4)
 
-    def _render_divider(self) -> None:
-        if not self.is_mounted:
-            return
-        try:
-            div = self.query_one("#spectrum-divider", Static)
-        except Exception:
-            return
-        w = max(16, div.size.width or self.size.width or 100)
-        color = AMBER_CORE if self.is_playing else BORDER_SLATE
-        div.update(Text.from_markup(f"[{color}]{'─' * w}[/]"), layout=False)
-
     def _render_well(self) -> None:
         if not self.is_mounted:
             return
@@ -362,7 +337,6 @@ class SpectrumDeck(Widget):
         """Toggle play-state gating on the spectrum visualizer."""
         changed = self.is_playing != bool(is_playing)
         self.is_playing = bool(is_playing)
-        self.set_class(self.is_playing, "-playing")
         if self.is_playing:
             if not self._bins:
                 self._bins = generate_simulated_bins(self._phase, n_bins=self._half_bin_count())
@@ -371,7 +345,6 @@ class SpectrumDeck(Widget):
             self._stop_timer()
             self._bins = []
         if changed or not self.is_playing:
-            self._render_divider()
             self._render_well()
 
     def set_progress(self, progress_ms: int, duration_ms: int) -> None:
