@@ -182,8 +182,8 @@ class ArtifactPanel(Widget):
                 app_h = self.app.size.height if self.app else 40
             except Exception:
                 app_h = 40
-            controls_h = 5 if (app_h < 34 or h < 24) else 10
-            avail_h = h - controls_h - 7
+            controls_h = 4 if (app_h < 34 or h < 24) else 8
+            avail_h = h - controls_h - 8
             if avail_h < 3:
                 return (art_w, 0)
             art_h = min(14, avail_h)
@@ -723,6 +723,119 @@ class _ClickableChip(Widget):
         return Text.from_markup(f"[bold {color}]{self._label}[/]")
 
 
+def _hex_to_rgb_tuple(hex_color: str) -> Tuple[int, int, int]:
+    cleaned = hex_color.lstrip("#")
+    return (int(cleaned[0:2], 16), int(cleaned[2:4], 16), int(cleaned[4:6], 16))
+
+
+class _TransportIconButton(Widget):
+    """Non-focusable borderless icon button for Prev / Next flanking the play pill."""
+
+    can_focus = False
+
+    DEFAULT_CSS = f"""
+    _TransportIconButton {{
+        width: 5;
+        height: 1;
+        background: {BG_PANEL};
+        content-align: center middle;
+    }}
+    """
+
+    def __init__(
+        self,
+        glyph: str,
+        on_press: Optional[Callable[[], None]] = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
+        self._glyph = glyph
+        self.on_press = on_press
+        self._hovered = False
+
+    def on_mouse_move(self, event: events.MouseMove) -> None:
+        if not self._hovered:
+            self._hovered = True
+            self.refresh()
+
+    def on_leave(self, event: events.Leave) -> None:
+        if self._hovered:
+            self._hovered = False
+            self.refresh()
+
+    def on_click(self, event: events.Click) -> None:
+        event.stop()
+        if self.on_press:
+            self.on_press()
+
+    def render(self) -> Text:
+        color = AMBER_PEAK if self._hovered else TEXT_MAIN
+        return Text.from_markup(f"[bold {color}] {self._glyph} [/]")
+
+
+class _PlayPillButton(Widget):
+    """Primary orange Powerline-capped circular Play/Pause button."""
+
+    can_focus = False
+
+    DEFAULT_CSS = f"""
+    _PlayPillButton {{
+        width: 7;
+        height: 1;
+        margin: 0 1;
+        background: {BG_PANEL};
+        content-align: center middle;
+    }}
+    """
+
+    def __init__(
+        self,
+        on_press: Optional[Callable[[], None]] = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
+        self.on_press = on_press
+        self._is_playing = False
+        self._hovered = False
+
+    def set_playing(self, is_playing: bool) -> None:
+        playing = bool(is_playing)
+        if playing != self._is_playing:
+            self._is_playing = playing
+            self.refresh()
+
+    def on_mouse_move(self, event: events.MouseMove) -> None:
+        if not self._hovered:
+            self._hovered = True
+            self.refresh()
+
+    def on_leave(self, event: events.Leave) -> None:
+        if self._hovered:
+            self._hovered = False
+            self.refresh()
+
+    def on_click(self, event: events.Click) -> None:
+        event.stop()
+        if self.on_press:
+            self.on_press()
+
+    def render(self) -> Text:
+        pill_rgb = _hex_to_rgb_tuple(AMBER_GLOW if self._hovered else AMBER_CORE)
+        icon_rgb = _hex_to_rgb_tuple(BG_OBSIDIAN)
+        bg_rgb = _hex_to_rgb_tuple(BG_PANEL)
+
+        cap = (
+            f"\x1b[38;2;{pill_rgb[0]};{pill_rgb[1]};{pill_rgb[2]}m"
+            f"\x1b[48;2;{bg_rgb[0]};{bg_rgb[1]};{bg_rgb[2]}m"
+        )
+        inner = (
+            f"\x1b[38;2;{icon_rgb[0]};{icon_rgb[1]};{icon_rgb[2]}m"
+            f"\x1b[48;2;{pill_rgb[0]};{pill_rgb[1]};{pill_rgb[2]}m"
+        )
+        glyph = "󰏤" if self._is_playing else "󰐊"
+        return Text.from_ansi(f"{cap}\ue0b6{inner}  {glyph}  {cap}\ue0b4\x1b[0m")
+
+
 class VolumeBar(Widget):
     """Full-width interactive horizontal volume fader supporting click and drag."""
 
@@ -857,13 +970,19 @@ class ControlsPanel(Widget):
 
     #transport-row {{
         width: 100%;
-        height: 3;
-        margin-top: 1;
+        height: 1;
+        align: center middle;
+        margin-top: 0;
     }}
 
     #mode-row {{
         width: 100%;
-        height: 3;
+        height: 1;
+        margin-top: 1;
+    }}
+
+    #btn-shuffle {{
+        margin-right: 1;
     }}
 
     #volume-box {{
@@ -933,9 +1052,9 @@ class ControlsPanel(Widget):
         if self.show_header:
             yield Static(id="controls-header")
         with Horizontal(id="transport-row"):
-            yield _ClickableChip("|◀ PREV", on_press=self.on_prev, id="btn-prev")
-            yield _ClickableChip("▶ PLAY", on_press=self.on_play_pause, accent=True, id="btn-play")
-            yield _ClickableChip("NEXT ▶|", on_press=self.on_next, id="btn-next")
+            yield _TransportIconButton("󰒮", on_press=self.on_prev, id="btn-prev")
+            yield _PlayPillButton(on_press=self.on_play_pause, id="btn-play")
+            yield _TransportIconButton("󰒭", on_press=self.on_next, id="btn-next")
         with Horizontal(id="mode-row"):
             yield _ClickableChip("⇄ SHUF: OFF", on_press=self.on_shuffle, id="btn-shuffle")
             yield _ClickableChip("↻ LOOP: OFF", on_press=self.on_repeat, id="btn-repeat")
@@ -987,15 +1106,18 @@ class ControlsPanel(Widget):
             t_row = self.query_one("#transport-row")
             m_row = self.query_one("#mode-row")
             v_box = self.query_one("#volume-box")
-            chips = [
-                self.query_one("#btn-prev", _ClickableChip),
-                self.query_one("#btn-play", _ClickableChip),
-                self.query_one("#btn-next", _ClickableChip),
+            mode_chips = [
                 self.query_one("#btn-shuffle", _ClickableChip),
                 self.query_one("#btn-repeat", _ClickableChip),
             ]
         except Exception:
             return
+
+        t_row.styles.height = 1
+        t_row.styles.margin = (0, 0, 0, 0) if self.embedded else (1, 0, 0, 0)
+        m_row.styles.height = 1
+        v_box.styles.height = 2
+        v_box.styles.border = "none"
 
         if compact_v:
             if self.embedded:
@@ -1004,14 +1126,8 @@ class ControlsPanel(Widget):
                     self.query_one("#controls-hint", Static).display = False
                 except Exception:
                     pass
-            t_row.styles.height = 1
-            t_row.styles.margin = (0, 0, 0, 0)
-            m_row.styles.height = 1
-            v_box.styles.height = 2
-            v_box.styles.border = "none"
+            m_row.styles.margin = (0, 0, 0, 0)
             v_box.styles.margin = (0, 0, 0, 0)
-            for c in chips:
-                c.set_compact(True)
         else:
             if self.embedded:
                 self.styles.margin = (1, 0, 0, 0)
@@ -1019,14 +1135,11 @@ class ControlsPanel(Widget):
                     self.query_one("#controls-hint", Static).display = True
                 except Exception:
                     pass
-            t_row.styles.height = 3
-            t_row.styles.margin = (0, 0, 0, 0) if self.embedded else (1, 0, 0, 0)
-            m_row.styles.height = 3
-            v_box.styles.height = 2
-            v_box.styles.border = "none"
+            m_row.styles.margin = (1, 0, 0, 0)
             v_box.styles.margin = (1, 0, 0, 0)
-            for c in chips:
-                c.set_compact(False)
+
+        for c in mode_chips:
+            c.set_compact(True)
 
     def _render_buttons(self) -> None:
         if not self.is_mounted:
@@ -1034,12 +1147,7 @@ class ControlsPanel(Widget):
         w = self.size.width or 32
         narrow = w < 30
         try:
-            self.query_one("#btn-prev", _ClickableChip).set_label("|◀" if narrow else "|◀ PREV", accent=False)
-            self.query_one("#btn-play", _ClickableChip).set_label(
-                ("❚❚" if self._is_playing else "▶") if narrow else ("❚❚ PAUSE" if self._is_playing else "▶ PLAY"),
-                accent=True,
-            )
-            self.query_one("#btn-next", _ClickableChip).set_label("▶|" if narrow else "NEXT ▶|", accent=False)
+            self.query_one("#btn-play", _PlayPillButton).set_playing(self._is_playing)
             self.query_one("#btn-shuffle", _ClickableChip).set_label(
                 f"SHF:{'ON' if self._shuffle_enabled else 'OFF'}" if narrow else f"⇄ SHUF: {'ON' if self._shuffle_enabled else 'OFF'}",
                 accent=self._shuffle_enabled,
