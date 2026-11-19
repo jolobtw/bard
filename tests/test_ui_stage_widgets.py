@@ -95,7 +95,7 @@ def test_artifact_panel_displays_art_after_empty_mount():
     async def _run():
         app = TestApp()
         with patch("bard.art.requests.get", return_value=resp):
-            async with app.run_test(size=(40, 32)) as pilot:
+            async with app.run_test(size=(120, 36)) as pilot:
                 panel = app.query_one(ArtifactPanel)
                 await pilot.pause()
                 art_box = panel.query_one("#art-box", Static)
@@ -115,6 +115,10 @@ def test_artifact_panel_displays_art_after_empty_mount():
                 assert art_box.size.width >= 14
                 assert art_box.size.height >= 5
                 assert "▁" in art_box.render().plain
+                art_center = panel.query_one("#art-center")
+                left_pad = art_box.region.x - art_center.region.x
+                right_pad = art_center.region.right - art_box.region.right
+                assert left_pad > 0 and abs(left_pad - right_pad) <= 1
 
     asyncio.run(_run())
 

@@ -53,7 +53,7 @@ class ArtifactPanel(Widget):
     #art-center {{
         width: 100%;
         height: 1fr;
-        content-align: center middle;
+        align: center middle;
     }}
 
     #art-box {{
