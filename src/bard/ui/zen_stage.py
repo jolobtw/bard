@@ -44,20 +44,20 @@ class ZenStage(Widget):
     ZenStage {{
         width: 100%;
         height: 1fr;
-        background: {BG_OBSIDIAN};
+        background: transparent;
         padding: 0 1;
     }}
 
     #stage-root {{
         width: 100%;
         height: 100%;
-        background: {BG_OBSIDIAN};
+        background: transparent;
     }}
 
     #command-deck {{
         width: 100%;
         height: 1fr;
-        background: {BG_OBSIDIAN};
+        background: transparent;
     }}
 
     ArtifactPanel {{

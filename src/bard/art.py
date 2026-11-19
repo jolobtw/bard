@@ -324,12 +324,16 @@ def frame_art_ansi(
         return art_ansi
 
     br, bg, bb = _hex_to_rgb_tuple(border_hex)
-    cr, cg, cb = _hex_to_rgb_tuple(bg_hex)
-    fg_bg = f"\x1b[38;2;{br};{bg};{bb}m\x1b[48;2;{cr};{cg};{cb}m"
-    bg_only = f"\x1b[48;2;{cr};{cg};{cb}m"
     rst = "\x1b[0m"
+    if not bg_hex or bg_hex.strip().lower() in ("transparent", "none"):
+        fg_bg = f"\x1b[38;2;{br};{bg};{bb}m"
+        corner = " "
+    else:
+        cr, cg, cb = _hex_to_rgb_tuple(bg_hex)
+        fg_bg = f"\x1b[38;2;{br};{bg};{bb}m\x1b[48;2;{cr};{cg};{cb}m"
+        bg_only = f"\x1b[48;2;{cr};{cg};{cb}m"
+        corner = f"{bg_only} {rst}"
 
-    corner = f"{bg_only} {rst}"
     top = f"{corner}{fg_bg}{'▁' * art_width}{rst}{corner}"
     bottom = f"{corner}{fg_bg}{'▔' * art_width}{rst}{corner}"
     left = f"{fg_bg}▕{rst}"

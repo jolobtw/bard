@@ -144,7 +144,7 @@ class SeekBar(Widget):
     SeekBar {{
         width: 100%;
         height: 1;
-        background: {BG_PANEL};
+        background: transparent;
         padding: 0 1;
     }}
     """
@@ -231,7 +231,7 @@ class SpectrumDeck(Widget):
         layout: vertical;
         width: 100%;
         height: auto;
-        background: {BG_PANEL};
+        background: transparent;
         border: round {BORDER_SLATE};
         margin-bottom: 0;
     }}
@@ -239,7 +239,7 @@ class SpectrumDeck(Widget):
     #spectrum-well {{
         width: 100%;
         height: 9;
-        background: {BG_PANEL};
+        background: transparent;
         content-align: center middle;
     }}
     """

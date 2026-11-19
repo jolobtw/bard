@@ -16,9 +16,12 @@ from bard.config import BardConfig
 from bard.models import Track
 from bard.oauth import YTMusicOAuth
 from bard.ui.header import ArcaneHeader
+from bard.ui.transparency import enable_terminal_transparency
 from bard.ui.zen_stage import ZenStage
 from bard.ui.curtain_drawer import CurtainDrawer
 from bard.ytmusic_client import YTMusicClient
+
+enable_terminal_transparency()
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +32,12 @@ class BardApp(App):
     AUTO_FOCUS = None
 
     CSS = """
+    App {
+        background: transparent;
+    }
+
     Screen {
-        background: #0D0E11;
+        background: transparent;
         layers: base overlay;
     }
     """

@@ -361,3 +361,55 @@ def test_compact_80x24_no_clipping():
             assert stage.query_one("#volume-control").region.bottom <= 24
 
     asyncio.run(_run())
+
+
+def test_transparent_terminal_background_and_ansi_patch():
+    from rich.color import Color as RichColor
+    from rich.style import Style as RichStyle
+    from textual.strip import Strip
+    from bard.ui.header import ArcaneHeader
+    from bard.ui.spectrum import SeekBar, SpectrumDeck
+    from bard.ui.stage_widgets import ArtifactPanel, ControlsPanel, QueuePanel
+    from bard.ui.transparency import enable_terminal_transparency
+    from bard.ui.zen_stage import ZenStage
+
+    enable_terminal_transparency()
+
+    style_black = RichStyle(color=RichColor.parse("#FF9E2C"), bgcolor=RichColor.parse("#000000"))
+    ansi_black = Strip.render_ansi(style_black, color_system=3)
+    assert "48;2;0;0;0" not in ansi_black
+    assert "38;2;255;158;44" in ansi_black
+
+    style_pill = RichStyle(color=RichColor.parse("#0D0E11"), bgcolor=RichColor.parse("#FF7B00"))
+    ansi_pill = Strip.render_ansi(style_pill, color_system=3)
+    assert "48;2;255;123;0" in ansi_pill
+
+    class TestApp(App):
+        CSS = "App, Screen { background: transparent; }"
+
+        def compose(self) -> ComposeResult:
+            yield ArcaneHeader(is_playing=False, device_name="Bard")
+            yield ZenStage()
+
+    async def _run():
+        app = TestApp()
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause()
+            for selector_or_cls in (
+                ArcaneHeader,
+                ZenStage,
+                SpectrumDeck,
+                SeekBar,
+                ArtifactPanel,
+                QueuePanel,
+                ControlsPanel,
+            ):
+                w = app.query_one(selector_or_cls)
+                assert w.styles.background.a == 0.0
+
+            play_spans = app.query_one("#btn-play").render().spans
+            # Powerline caps (first & last chars) must have no opaque panel bgcolor
+            cap_styles = [s for s in play_spans if s.start == 0]
+            assert all(s.style.bgcolor is None for s in cap_styles)
+
+    asyncio.run(_run())

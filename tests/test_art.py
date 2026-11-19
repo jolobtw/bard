@@ -158,5 +158,9 @@ def test_frame_art_ansi_thin_zero_gap_border():
     assert plain_lines[2] == "▕███▏"
     assert plain_lines[3] == " ▔▔▔ "
 
+    framed_transparent = frame_art_ansi(sample, border_hex="#FF7A00", bg_hex="transparent")
+    assert "48;2;" not in framed_transparent.split("\n")[0]
+    assert [Text.from_ansi(line).plain for line in framed_transparent.split("\n")] == plain_lines
+
 
 

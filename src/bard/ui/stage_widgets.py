@@ -39,7 +39,7 @@ class ArtifactPanel(Widget):
         min-width: 36;
         max-width: 48;
         height: 100%;
-        background: {BG_PANEL};
+        background: transparent;
         border: round {BORDER_SLATE};
         padding: 0 1;
     }}
@@ -59,7 +59,7 @@ class ArtifactPanel(Widget):
     #art-box {{
         width: auto;
         height: auto;
-        background: {BG_PANEL};
+        background: transparent;
     }}
 
     #art-divider {{
@@ -306,7 +306,7 @@ class ArtifactPanel(Widget):
                 self._last_art_url = art_url
                 self._last_dims = (art_w, art_h)
                 self._cached_art_ansi = render_album_art(art_url, width=art_w, height=art_h)
-            framed = frame_art_ansi(self._cached_art_ansi, border_hex=BORDER_AMBER, bg_hex=BG_PANEL)
+            framed = frame_art_ansi(self._cached_art_ansi, border_hex=BORDER_AMBER, bg_hex="transparent")
             if framed != self._last_art_drawn:
                 self._last_art_drawn = framed
                 art_w_widget.update(Text.from_ansi(framed), layout=True)
@@ -357,7 +357,7 @@ class _QueueListView(Widget):
     _QueueListView {{
         width: 100%;
         height: 1fr;
-        background: {BG_PANEL};
+        background: transparent;
     }}
     """
 
@@ -458,7 +458,7 @@ class QueuePanel(Widget):
     QueuePanel {{
         width: 1fr;
         height: 100%;
-        background: {BG_PANEL};
+        background: transparent;
         border: round {BORDER_SLATE};
         padding: 0 1;
     }}
@@ -471,7 +471,7 @@ class QueuePanel(Widget):
     #queue-filter-row {{
         width: 100%;
         height: 1;
-        background: {BG_ELEVATED};
+        background: transparent;
         margin: 0 0 1 0;
     }}
 
@@ -479,7 +479,7 @@ class QueuePanel(Widget):
         width: 3;
         height: 1;
         color: {AMBER_CORE};
-        background: {BG_ELEVATED};
+        background: transparent;
         text-style: bold;
         content-align: center middle;
     }}
@@ -489,12 +489,13 @@ class QueuePanel(Widget):
         height: 1;
         border: none;
         padding: 0;
-        background: {BG_ELEVATED};
+        background: transparent;
         color: {TEXT_MAIN};
     }}
 
     #queue-filter:focus {{
         border: none;
+        background: {BG_ELEVATED};
         color: {AMBER_PEAK};
     }}
     """
@@ -663,7 +664,7 @@ class _ClickableChip(Widget):
     _ClickableChip {{
         width: 1fr;
         height: 3;
-        background: {BG_ELEVATED};
+        background: transparent;
         border: round {BORDER_SLATE};
         content-align: center middle;
     }}
@@ -695,7 +696,10 @@ class _ClickableChip(Widget):
             self.styles.border = ("round", BORDER_AMBER)
         else:
             self.styles.border = ("round", BORDER_SLATE)
-        self.styles.background = BG_ACTIVE_AMBER if self._accent else BG_ELEVATED
+        if self._accent:
+            self.styles.background = BG_ACTIVE_AMBER
+        else:
+            self.styles.background = BG_ELEVATED if self._hovered else "transparent"
 
     def set_label(self, label: str, accent: Optional[bool] = None) -> None:
         changed = label != self._label or (accent is not None and accent != self._accent)
@@ -714,11 +718,13 @@ class _ClickableChip(Widget):
     def on_mouse_move(self, event: events.MouseMove) -> None:
         if not self._hovered:
             self._hovered = True
+            self._apply_style()
             self.refresh()
 
     def on_leave(self, event: events.Leave) -> None:
         if self._hovered:
             self._hovered = False
+            self._apply_style()
             self.refresh()
 
     def on_click(self, event: events.Click) -> None:
@@ -745,7 +751,7 @@ class _TransportIconButton(Widget):
     _TransportIconButton {{
         width: 5;
         height: 1;
-        background: {BG_PANEL};
+        background: transparent;
         content-align: center middle;
     }}
     """
@@ -791,7 +797,7 @@ class _PlayPillButton(Widget):
         width: 7;
         height: 1;
         margin: 0 1;
-        background: {BG_PANEL};
+        background: transparent;
         content-align: center middle;
     }}
     """
@@ -830,12 +836,8 @@ class _PlayPillButton(Widget):
     def render(self) -> Text:
         pill_rgb = _hex_to_rgb_tuple(AMBER_GLOW if self._hovered else AMBER_CORE)
         icon_rgb = _hex_to_rgb_tuple(BG_OBSIDIAN)
-        bg_rgb = _hex_to_rgb_tuple(BG_PANEL)
 
-        cap = (
-            f"\x1b[38;2;{pill_rgb[0]};{pill_rgb[1]};{pill_rgb[2]}m"
-            f"\x1b[48;2;{bg_rgb[0]};{bg_rgb[1]};{bg_rgb[2]}m"
-        )
+        cap = f"\x1b[0;38;2;{pill_rgb[0]};{pill_rgb[1]};{pill_rgb[2]}m"
         inner = (
             f"\x1b[38;2;{icon_rgb[0]};{icon_rgb[1]};{icon_rgb[2]}m"
             f"\x1b[48;2;{pill_rgb[0]};{pill_rgb[1]};{pill_rgb[2]}m"
@@ -853,7 +855,7 @@ class VolumeBar(Widget):
     VolumeBar {{
         width: 1fr;
         height: 1;
-        background: {BG_PANEL};
+        background: transparent;
     }}
     """
 
@@ -922,7 +924,7 @@ class _MuteLabel(Widget):
         width: 3;
         height: 1;
         content-align: left middle;
-        background: {BG_PANEL};
+        background: transparent;
     }}
     """
 
@@ -966,7 +968,7 @@ class ControlsPanel(Widget):
     ControlsPanel {{
         width: 1fr;
         height: 100%;
-        background: {BG_PANEL};
+        background: transparent;
         border: round {BORDER_SLATE};
         padding: 0 1;
     }}
@@ -996,7 +998,7 @@ class ControlsPanel(Widget):
     #volume-box {{
         width: 100%;
         height: 2;
-        background: {BG_PANEL};
+        background: transparent;
         border: none;
         padding: 0;
         margin-top: 1;

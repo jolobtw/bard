@@ -49,7 +49,7 @@ class ArcaneHeader(Static):
         dock: top;
         height: 2;
         width: 100%;
-        background: {BG_OBSIDIAN};
+        background: transparent;
         color: {TEXT_MAIN};
         padding: 0 1;
         margin-bottom: 0;
