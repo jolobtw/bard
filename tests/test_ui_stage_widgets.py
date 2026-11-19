@@ -54,6 +54,8 @@ def test_artifact_panel_empty_active_codec_and_marquee():
             assert "OPUS" not in codec_text
             assert "48kHz" not in codec_text
             assert "Synthwave" in codec_text
+            for sel in ("#track-title", "#track-meta", "#track-source", "#track-codec"):
+                assert panel.query_one(sel, Static).styles.content_align == ("center", "middle")
 
             # Marquee scrolls long title with no rune prefix
             t_before = panel.query_one("#track-title", Static).render().plain

@@ -71,6 +71,8 @@ class ArtifactPanel(Widget):
     #track-title {{
         width: 100%;
         height: 1;
+        content-align: center middle;
+        text-align: center;
         text-style: bold;
         color: {AMBER_PEAK};
     }}
@@ -78,18 +80,24 @@ class ArtifactPanel(Widget):
     #track-meta {{
         width: 100%;
         height: 1;
+        content-align: center middle;
+        text-align: center;
         color: {TEXT_MAIN};
     }}
 
     #track-source {{
         width: 100%;
         height: 1;
+        content-align: center middle;
+        text-align: center;
         color: {TEXT_MUTED};
     }}
 
     #track-codec {{
         width: 100%;
         height: 1;
+        content-align: center middle;
+        text-align: center;
         color: {AMBER_CORE};
     }}
     """
