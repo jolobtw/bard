@@ -121,8 +121,11 @@ def test_spectrum_deck_play_state_gating_and_rapid_toggle():
             assert len(deck.query("#spectrum-divider")) == 0
             assert deck.styles.border_top[0] == "round"
 
-            # Progress scrubber uses subtle line/thumb bar
-            bar_rendered = str(deck.query_one("#progress-bar", SeekBar).render())
+            # Progress scrubber uses subtle line/thumb bar with spacing below visualizer
+            well_w = deck.query_one("#spectrum-well")
+            bar_w = deck.query_one("#progress-bar", SeekBar)
+            assert bar_w.region.y >= well_w.region.bottom + 1
+            bar_rendered = str(bar_w.render())
             assert "●" in bar_rendered
 
             # Rapid toggle back to paused clears immediately

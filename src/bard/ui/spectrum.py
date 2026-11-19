@@ -144,6 +144,7 @@ class SeekBar(Widget):
     SeekBar {{
         width: 100%;
         height: 1;
+        margin-top: 1;
         background: transparent;
         padding: 0 1;
     }}
@@ -273,7 +274,7 @@ class SpectrumDeck(Widget):
             app_h = self.app.size.height if self.app else 40
         except Exception:
             app_h = 40
-        target_h = 5 if app_h < 32 else 9
+        target_h = 4 if app_h < 32 else 8
         try:
             well = self.query_one("#spectrum-well", Static)
             well.styles.height = target_h
