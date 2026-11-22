@@ -178,3 +178,52 @@ def test_seekbar_click_and_drag_clamps_bounds():
             assert 40.0 <= seeks[-1] <= 60.0
 
     asyncio.run(_run())
+
+
+def test_smooth_halfblock_and_tgp_pixel_spectrum():
+    import re
+    from unittest.mock import patch
+    from PIL import Image as PILImage
+    import bard.ui.spectrum as sp
+
+    # 8-stop dual-color half-block renderer with peak-hold pips
+    lines = sp.render_spectrum_lines([1.0, 0.25], rows=4, smooth_halfblock=True, peaks=[1.0, 0.9])
+    assert len(lines) == 4
+    assert " on " in lines[-1]  # Dual-color fg+bg per cell
+    assert "#FFD28A" in lines[0]  # Peak-hold pip on top row
+    plain_bottom = re.sub(r"\[/?[^\]]*\]", "", lines[-1])
+    assert plain_bottom == "▄ ▄ ▄ ▄"
+
+    # TGP pixel-art spectrum canvas
+    img = sp.render_spectrum_image([0.9, 0.4, 0.2], width_px=240, height_px=80, peaks=[0.95, 0.85, 0.5])
+    assert isinstance(img, PILImage.Image)
+    assert img.mode == "RGBA" and img.size == (240, 80)
+    assert img.getpixel((0, 0))[3] == 0  # Transparent background
+    assert img.getpixel((0, 79))[3] == 255  # Leftmost bar anchored at x=0
+    assert img.getpixel((239, 79))[3] == 255  # Rightmost bar anchored at x=w-1
+
+    # SpectrumDeck switches to #spectrum-tgp in TGP mode when playing
+    class TestApp(App):
+        def compose(self) -> ComposeResult:
+            yield sp.SpectrumDeck()
+
+    async def _run():
+        with patch.object(sp, "_is_tgp_mode", return_value=True):
+            app = TestApp()
+            async with app.run_test(size=(100, 20)) as pilot:
+                deck = app.query_one(sp.SpectrumDeck)
+                await pilot.pause()
+                tgp_w = deck.query_one("#spectrum-tgp")
+                assert tgp_w.display is False
+
+                deck.set_state(is_playing=True, has_track=True, progress_ms=5000, duration_ms=100000)
+                await pilot.pause()
+                assert tgp_w.display is True
+                assert isinstance(tgp_w.image, PILImage.Image)
+
+                deck.set_state(is_playing=False, has_track=True, progress_ms=5000, duration_ms=100000)
+                await pilot.pause()
+                assert tgp_w.display is False
+                assert tgp_w.image is None
+
+    asyncio.run(_run())
