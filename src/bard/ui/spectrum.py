@@ -272,6 +272,8 @@ def render_spectrum_lines(
         full_peaks = mirror_spectrum_bins(peaks) if (peaks and len(peaks) == len(half)) else None
 
     split_idx = len(full_levels) // 2
+    quarter_left = max(1, split_idx // 2)
+    quarter_right = min(len(full_levels) - 1, split_idx + (len(full_levels) - split_idx) // 2)
     lines: List[str] = []
     sub_rows = rows * 2
 
@@ -327,10 +329,19 @@ def render_spectrum_lines(
                 else:
                     row_cells.append(f"[{color}]{ch}[/]")
 
-        if center_gap > 1:
+        if center_gap == 2:
             left_str = " ".join(row_cells[:split_idx])
             right_str = " ".join(row_cells[split_idx:])
-            lines.append(f"{left_str}{' ' * center_gap}{right_str}")
+            lines.append(f"{left_str}  {right_str}")
+        elif center_gap >= 4:
+            # Distribute extra spaces symmetrically (2 in center, 1 each at quarters)
+            # so there is never a 4-space hole that looks like a missing middle bar.
+            q_l = " ".join(row_cells[:quarter_left])
+            q_ml = " ".join(row_cells[quarter_left:split_idx])
+            q_mr = " ".join(row_cells[split_idx:quarter_right])
+            q_r = " ".join(row_cells[quarter_right:])
+            mid_pad = " " * (center_gap - 2)
+            lines.append(f"{q_l}  {q_ml}{mid_pad}{q_mr}  {q_r}")
         else:
             lines.append(" ".join(row_cells))
     return lines
@@ -582,8 +593,6 @@ class SpectrumDeck(Widget):
             self._bins,
             rows=well_h,
             target_width=target_w,
-            smooth_halfblock=True,
-            peaks=self._peaks,
         )
         well.update(Text.from_markup("\n".join(spec_lines)), layout=False)
 
