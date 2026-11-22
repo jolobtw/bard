@@ -152,8 +152,8 @@ def test_zen_stage_clickable_controls_queue_and_seek_volume():
 
             stage.set_shuffle(True)
             stage.set_repeat("one")
-            assert "SHUF: ON" in str(stage.query_one("#btn-shuffle").render())
-            assert "LOOP: ONE" in str(stage.query_one("#btn-repeat").render())
+            assert "󰒟" in str(stage.query_one("#btn-shuffle").render())
+            assert "󰑘" in str(stage.query_one("#btn-repeat").render())
 
             tracks = [
                 Track("1", "Alpha", "A", "Alb", 120, ""),

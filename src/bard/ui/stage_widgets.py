@@ -810,7 +810,7 @@ def _hex_to_rgb_tuple(hex_color: str) -> Tuple[int, int, int]:
 
 
 class _TransportIconButton(Widget):
-    """Non-focusable borderless icon button for Prev / Next flanking the play pill."""
+    """Non-focusable borderless icon button for transport & mode controls."""
 
     can_focus = False
 
@@ -827,12 +827,35 @@ class _TransportIconButton(Widget):
         self,
         glyph: str,
         on_press: Optional[Callable[[], None]] = None,
+        accent: bool = False,
+        muted: bool = False,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
         self._glyph = glyph
         self.on_press = on_press
+        self._accent = accent
+        self._muted = muted
         self._hovered = False
+
+    def set_state(
+        self,
+        glyph: Optional[str] = None,
+        accent: Optional[bool] = None,
+        muted: Optional[bool] = None,
+    ) -> None:
+        changed = False
+        if glyph is not None and glyph != self._glyph:
+            self._glyph = glyph
+            changed = True
+        if accent is not None and accent != self._accent:
+            self._accent = accent
+            changed = True
+        if muted is not None and muted != self._muted:
+            self._muted = muted
+            changed = True
+        if changed:
+            self.refresh()
 
     def on_mouse_move(self, event: events.MouseMove) -> None:
         if not self._hovered:
@@ -850,8 +873,16 @@ class _TransportIconButton(Widget):
             self.on_press()
 
     def render(self) -> Text:
-        color = AMBER_PEAK if self._hovered else TEXT_MAIN
-        return Text.from_markup(f"[bold {color}] {self._glyph} [/]")
+        if self._hovered:
+            color = AMBER_PEAK
+            style = f"bold {color}"
+        elif self._accent:
+            style = f"bold {AMBER_CORE}"
+        elif self._muted:
+            style = TEXT_MUTED
+        else:
+            style = f"bold {TEXT_MAIN}"
+        return Text.from_markup(f"[{style}] {self._glyph} [/]")
 
 
 class _PlayPillButton(Widget):
@@ -1052,16 +1083,6 @@ class ControlsPanel(Widget):
         margin-top: 0;
     }}
 
-    #mode-row {{
-        width: 100%;
-        height: 1;
-        margin-top: 1;
-    }}
-
-    #btn-shuffle {{
-        margin-right: 1;
-    }}
-
     #volume-box {{
         width: 100%;
         height: 2;
@@ -1129,12 +1150,11 @@ class ControlsPanel(Widget):
         if self.show_header:
             yield Static(id="controls-header")
         with Horizontal(id="transport-row"):
+            yield _TransportIconButton("󰒟", on_press=self.on_shuffle, muted=True, id="btn-shuffle")
             yield _TransportIconButton("󰒮", on_press=self.on_prev, id="btn-prev")
             yield _PlayPillButton(on_press=self.on_play_pause, id="btn-play")
             yield _TransportIconButton("󰒭", on_press=self.on_next, id="btn-next")
-        with Horizontal(id="mode-row"):
-            yield _ClickableChip("⇄ SHUF: OFF", on_press=self.on_shuffle, id="btn-shuffle")
-            yield _ClickableChip("↻ LOOP: OFF", on_press=self.on_repeat, id="btn-repeat")
+            yield _TransportIconButton("󰑖", on_press=self.on_repeat, muted=True, id="btn-repeat")
         with Vertical(id="volume-box"):
             with Horizontal(id="volume-bar-row"):
                 yield _MuteLabel(on_mute=self.on_mute, id="vol-mute-btn")
@@ -1181,18 +1201,12 @@ class ControlsPanel(Widget):
 
         try:
             t_row = self.query_one("#transport-row")
-            m_row = self.query_one("#mode-row")
             v_box = self.query_one("#volume-box")
-            mode_chips = [
-                self.query_one("#btn-shuffle", _ClickableChip),
-                self.query_one("#btn-repeat", _ClickableChip),
-            ]
         except Exception:
             return
 
         t_row.styles.height = 1
         t_row.styles.margin = (0, 0, 0, 0) if self.embedded else (1, 0, 0, 0)
-        m_row.styles.height = 1
         v_box.styles.height = 2
         v_box.styles.border = "none"
 
@@ -1203,7 +1217,6 @@ class ControlsPanel(Widget):
                     self.query_one("#controls-hint", Static).display = False
                 except Exception:
                     pass
-            m_row.styles.margin = (0, 0, 0, 0)
             v_box.styles.margin = (0, 0, 0, 0)
         else:
             if self.embedded:
@@ -1212,27 +1225,23 @@ class ControlsPanel(Widget):
                     self.query_one("#controls-hint", Static).display = True
                 except Exception:
                     pass
-            m_row.styles.margin = (1, 0, 0, 0)
             v_box.styles.margin = (1, 0, 0, 0)
-
-        for c in mode_chips:
-            c.set_compact(True)
 
     def _render_buttons(self) -> None:
         if not self.is_mounted:
             return
-        w = self.size.width or 32
-        narrow = w < 30
         try:
             self.query_one("#btn-play", _PlayPillButton).set_playing(self._is_playing)
-            self.query_one("#btn-shuffle", _ClickableChip).set_label(
-                f"SHF:{'ON' if self._shuffle_enabled else 'OFF'}" if narrow else f"⇄ SHUF: {'ON' if self._shuffle_enabled else 'OFF'}",
+            self.query_one("#btn-shuffle", _TransportIconButton).set_state(
+                glyph="󰒟",
                 accent=self._shuffle_enabled,
+                muted=not self._shuffle_enabled,
             )
             mode = self._repeat_mode if self._repeat_mode in ("off", "all", "one") else "off"
-            self.query_one("#btn-repeat", _ClickableChip).set_label(
-                f"LP:{mode.upper()}" if narrow else f"↻ LOOP: {mode.upper()}",
+            self.query_one("#btn-repeat", _TransportIconButton).set_state(
+                glyph="󰑘" if mode == "one" else "󰑖",
                 accent=(mode != "off"),
+                muted=(mode == "off"),
             )
         except Exception:
             pass

@@ -226,21 +226,24 @@ def test_controls_panel_non_focusable_buttons_volume_and_output_route():
                 device_name="WASAPI // Speakers",
             )
             await pilot.pause()
-            assert "LOOP: ONE" in str(panel.query_one("#btn-repeat").render())
-            assert "SHUF: ON" in str(panel.query_one("#btn-shuffle").render())
+            assert "󰑘" in str(panel.query_one("#btn-repeat").render())
+            assert "󰒟" in str(panel.query_one("#btn-shuffle").render())
             assert "●" in str(panel.query_one("#volume-control", VolumeBar).render())
 
-            # Orange Powerline play/pause pill flanked by Prev and Next icons on a single compact row
+            # Orange Powerline play/pause pill flanked by Shuffle, Prev, Next, Repeat icons on a single row
+            assert len(panel.query("#mode-row")) == 0
+            btn_shuf = panel.query_one("#btn-shuffle")
             btn_prev = panel.query_one("#btn-prev")
             btn_play = panel.query_one("#btn-play")
             btn_next = panel.query_one("#btn-next")
+            btn_rep = panel.query_one("#btn-repeat")
             play_plain = btn_play.render().plain
             assert "\ue0b6" in play_plain and "\ue0b4" in play_plain
             assert "󰏤" in play_plain
             assert "󰒮" in btn_prev.render().plain
             assert "󰒭" in btn_next.render().plain
-            assert btn_prev.region.y == btn_play.region.y == btn_next.region.y
-            assert btn_prev.region.x < btn_play.region.x < btn_next.region.x
+            assert btn_shuf.region.y == btn_prev.region.y == btn_play.region.y == btn_next.region.y == btn_rep.region.y
+            assert btn_shuf.region.x < btn_prev.region.x < btn_play.region.x < btn_next.region.x < btn_rep.region.x
             assert panel.query_one("#transport-row").size.height == 1
 
             panel.set_state(
