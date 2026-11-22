@@ -355,16 +355,33 @@ def apply_arcane_glow(
     bg_hex: Optional[str] = None,
     dither_alpha: bool = False,
 ) -> Image.Image:
-    """Composite a soft backlit Obsidian & Ember Gaussian glow behind album art."""
+    """Composite a soft backlit Obsidian & Ember glow (TGP RGBA) or crisp layered rim (Sixel 1-bit alpha)."""
     src = img.convert("RGBA")
     w, h = src.size
-    pad = max(12, int(min(w, h) * 0.10))
-    canvas_w = w + pad * 2
-    canvas_h = h + pad * 2
-
     outer_rgb = _hex_to_rgb_tuple(outer_hex)
     core_rgb = _hex_to_rgb_tuple(glow_hex)
     border_rgb = _hex_to_rgb_tuple(border_hex)
+
+    # Sixel only supports 1-bit alpha (no semi-transparency), so a blurred glow
+    # either paints a dark box or dithers into speckled pixels. Use a clean,
+    # razor-sharp layered Arcane ember rim on a transparent canvas instead.
+    if dither_alpha:
+        rim_outer = max(2, min(4, min(w, h) // 130))
+        rim_inner = max(2, min(4, min(w, h) // 130))
+        pad = rim_outer + rim_inner
+        canvas = Image.new("RGBA", (w + pad * 2, h + pad * 2), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(canvas)
+        draw.rectangle([0, 0, w + pad * 2 - 1, h + pad * 2 - 1], fill=(*outer_rgb, 255))
+        draw.rectangle(
+            [rim_outer, rim_outer, w + pad * 2 - rim_outer - 1, h + pad * 2 - rim_outer - 1],
+            fill=(*border_rgb, 255),
+        )
+        canvas.paste(src, (pad, pad), src)
+        return canvas
+
+    pad = max(12, int(min(w, h) * 0.10))
+    canvas_w = w + pad * 2
+    canvas_h = h + pad * 2
 
     # Wide outer ember halo (alpha mask blurred separately so RGB stays vibrant)
     outer_mask = Image.new("L", (canvas_w, canvas_h), 0)
@@ -396,13 +413,7 @@ def apply_arcane_glow(
         canvas = Image.alpha_composite(canvas, outer_layer)
         canvas = Image.alpha_composite(canvas, core_layer)
     else:
-        # Composite glow layers without black-premultiplied RGB darkening
         canvas = Image.alpha_composite(outer_layer, core_layer)
-        if dither_alpha:
-            # Sixel only supports 1-bit transparency: dither alpha to 0 or 255
-            # so outer pixels are cleanly transparent with no dark box or rings.
-            binary_alpha = canvas.getchannel("A").convert("1", dither=Image.Dither.FLOYDSTEINBERG).convert("L")
-            canvas.putalpha(binary_alpha)
 
     # Subtle crisp 2px amber rim right behind the sharp cover
     rim_px = max(1, min(3, pad // 20))

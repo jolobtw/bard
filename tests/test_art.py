@@ -177,13 +177,13 @@ def test_apply_arcane_glow_tgp_rgba_and_sixel_rgb():
     edge_px = tgp_img.getpixel((pad - 3, tgp_img.height // 2))
     assert edge_px[0] > edge_px[2] and edge_px[3] > 50  # Warm amber/ember glow
 
-    # Sixel mode (dither_alpha=True): RGBA with 1-bit dithered alpha (0 or 255) and transparent corners
+    # Sixel mode (dither_alpha=True): crisp layered Arcane rim with strictly 0/255 alpha
     sixel_img = apply_arcane_glow(cover, bg_hex=None, dither_alpha=True)
     assert sixel_img.mode == "RGBA"
-    assert sixel_img.size == tgp_img.size
-    assert sixel_img.getpixel((0, 0))[3] == 0
+    assert sixel_img.width > cover.width and sixel_img.height > cover.height
+    assert sixel_img.getpixel((0, 0))[3] == 255
     alpha_hist = sixel_img.getchannel("A").histogram()
-    assert not any(alpha_hist[1:255])  # Strictly 0 or 255 so Sixel never composites onto a dark box
+    assert not any(alpha_hist[1:255])  # No semi-transparent pixels in Sixel mode
 
     # Cached wrapper returns identical cached object for same URL + bg_hex
     c1 = render_glow_album_art("https://example.com/glow_test.jpg", cover, bg_hex=None)
