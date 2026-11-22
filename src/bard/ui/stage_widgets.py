@@ -11,7 +11,7 @@ from textual.containers import Horizontal, Vertical
 from textual.widget import Widget
 from textual.widgets import Input, Static
 
-from bard.art import frame_art_ansi, render_album_art
+from bard.art import fetch_pil_image, frame_art_ansi, render_album_art, render_glow_album_art
 from bard.models import Track
 from bard.ui.palette import (
     AMBER_CORE,
@@ -28,6 +28,37 @@ from bard.ui.palette import (
     TEXT_MUTED,
 )
 from bard.ui.spectrum import format_ms, render_arcane_bar
+
+try:
+    from textual_image.widget import (
+        AutoImage as _TextualAutoImage,
+        AutoRenderable as _TextualAutoRenderable,
+        SixelRenderable as _TextualSixelRenderable,
+        TGPRenderable as _TextualTGPRenderable,
+    )
+except Exception:  # pragma: no cover - optional runtime fallback
+    _TextualAutoImage = None
+    _TextualAutoRenderable = None
+    _TextualSixelRenderable = None
+    _TextualTGPRenderable = None
+
+
+def _supports_pixel_art() -> bool:
+    """Return True when the active terminal supports Kitty TGP or Sixel pixel graphics."""
+    return (
+        _TextualAutoImage is not None
+        and _TextualAutoRenderable is not None
+        and _TextualAutoRenderable in (_TextualTGPRenderable, _TextualSixelRenderable)
+    )
+
+
+def _is_sixel_mode() -> bool:
+    """Return True when active pixel graphics use Sixel (1-bit alpha)."""
+    return (
+        _TextualAutoRenderable is not None
+        and _TextualSixelRenderable is not None
+        and _TextualAutoRenderable is _TextualSixelRenderable
+    )
 
 
 class ArtifactPanel(Widget):
@@ -139,7 +170,10 @@ class ArtifactPanel(Widget):
     def compose(self) -> ComposeResult:
         yield Static(id="art-header")
         with Vertical(id="art-center"):
-            yield Static(id="art-box")
+            if _supports_pixel_art():
+                yield _TextualAutoImage(id="art-box")
+            else:
+                yield Static(id="art-box")
         yield Static(id="art-divider")
         yield Static(id="track-title")
         yield Static(id="track-meta")
@@ -281,7 +315,7 @@ class ArtifactPanel(Widget):
             return
         try:
             hdr_w = self.query_one("#art-header", Static)
-            art_w_widget = self.query_one("#art-box", Static)
+            art_w_widget = self.query_one("#art-box")
             div_w = self.query_one("#art-divider", Static)
             title_w = self.query_one("#track-title", Static)
             meta_w = self.query_one("#track-meta", Static)
@@ -302,7 +336,28 @@ class ArtifactPanel(Widget):
 
         art_w, art_h = self.get_art_dimensions()
         art_url = str(self.playback_data.get("album_art_url", "")) if self.playback_data else ""
-        if art_url and art_h > 0:
+        if _TextualAutoImage is not None and isinstance(art_w_widget, _TextualAutoImage):
+            if art_url and art_h > 0:
+                if art_url != self._last_art_url or self._last_dims != (art_w, art_h):
+                    pil_img = fetch_pil_image(art_url)
+                    if pil_img is not None:
+                        bg_hex = BG_OBSIDIAN if _is_sixel_mode() else None
+                        glow_img = render_glow_album_art(art_url, pil_img, bg_hex=bg_hex)
+                        art_w_widget.styles.width = art_w + 4
+                        art_w_widget.styles.height = art_h + 2
+                        art_w_widget.image = glow_img
+                        self._last_art_url = art_url
+                        self._last_dims = (art_w, art_h)
+                    else:
+                        art_w_widget.image = None
+                        self._last_art_url = ""
+                        self._last_dims = (art_w, art_h)
+            else:
+                self._last_art_url = ""
+                self._last_dims = (art_w, art_h)
+                if art_w_widget.image is not None:
+                    art_w_widget.image = None
+        elif art_url and art_h > 0:
             if art_url != self._last_art_url or self._last_dims != (art_w, art_h) or not self._cached_art_ansi:
                 self._last_art_url = art_url
                 self._last_dims = (art_w, art_h)

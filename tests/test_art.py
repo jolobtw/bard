@@ -163,4 +163,31 @@ def test_frame_art_ansi_thin_zero_gap_border():
     assert [Text.from_ansi(line).plain for line in framed_transparent.split("\n")] == plain_lines
 
 
+def test_apply_arcane_glow_tgp_rgba_and_sixel_rgb():
+    from bard.art import apply_arcane_glow, render_glow_album_art
+
+    cover = Image.new("RGB", (100, 100), color=(20, 40, 80))
+
+    # TGP mode (bg_hex=None): RGBA with transparent corners and warm amber glow near cover edge
+    tgp_img = apply_arcane_glow(cover, bg_hex=None)
+    assert tgp_img.mode == "RGBA"
+    assert tgp_img.width > cover.width and tgp_img.height > cover.height
+    assert tgp_img.getpixel((0, 0))[3] < 20  # Outer corner fades out
+    pad = (tgp_img.width - cover.width) // 2
+    edge_px = tgp_img.getpixel((pad - 3, tgp_img.height // 2))
+    assert edge_px[0] > edge_px[2] and edge_px[3] > 50  # Warm amber/ember glow
+
+    # Sixel mode (bg_hex="#0D0E11"): opaque RGB pre-blended onto obsidian
+    sixel_img = apply_arcane_glow(cover, bg_hex="#0D0E11")
+    assert sixel_img.mode == "RGB"
+    assert sixel_img.size == tgp_img.size
+    corner_px = sixel_img.getpixel((0, 0))
+    assert corner_px[0] <= 20 and corner_px[1] <= 20 and corner_px[2] <= 25
+
+    # Cached wrapper returns identical cached object for same URL + bg_hex
+    c1 = render_glow_album_art("https://example.com/glow_test.jpg", cover, bg_hex=None)
+    c2 = render_glow_album_art("https://example.com/glow_test.jpg", cover, bg_hex=None)
+    assert c1 is c2
+
+
 
