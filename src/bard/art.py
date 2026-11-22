@@ -353,11 +353,12 @@ def apply_arcane_glow(
     outer_hex: str = "#FF4500",
     border_hex: str = "#FF9E2C",
     bg_hex: Optional[str] = None,
+    dither_alpha: bool = False,
 ) -> Image.Image:
     """Composite a soft backlit Obsidian & Ember Gaussian glow behind album art."""
     src = img.convert("RGBA")
     w, h = src.size
-    pad = max(16, int(min(w, h) * 0.14))
+    pad = max(12, int(min(w, h) * 0.10))
     canvas_w = w + pad * 2
     canvas_h = h + pad * 2
 
@@ -365,41 +366,50 @@ def apply_arcane_glow(
     core_rgb = _hex_to_rgb_tuple(glow_hex)
     border_rgb = _hex_to_rgb_tuple(border_hex)
 
-    # Wide outer ember halo
-    outer_layer = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
-    outer_draw = ImageDraw.Draw(outer_layer)
-    outer_spread = max(4, int(pad * 0.35))
+    # Wide outer ember halo (alpha mask blurred separately so RGB stays vibrant)
+    outer_mask = Image.new("L", (canvas_w, canvas_h), 0)
+    outer_draw = ImageDraw.Draw(outer_mask)
+    outer_spread = max(3, int(pad * 0.25))
     outer_draw.rectangle(
         [pad - outer_spread, pad - outer_spread, pad + w + outer_spread - 1, pad + h + outer_spread - 1],
-        fill=(*outer_rgb, 155),
+        fill=145,
     )
-    outer_layer = outer_layer.filter(ImageFilter.GaussianBlur(radius=max(6.0, pad * 0.45)))
+    outer_mask = outer_mask.filter(ImageFilter.GaussianBlur(radius=max(5.0, pad * 0.40)))
+    outer_layer = Image.new("RGBA", (canvas_w, canvas_h), (*outer_rgb, 0))
+    outer_layer.putalpha(outer_mask)
 
     # Tighter inner amber core glow
-    core_layer = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
-    core_draw = ImageDraw.Draw(core_layer)
-    core_spread = max(2, int(pad * 0.14))
+    core_mask = Image.new("L", (canvas_w, canvas_h), 0)
+    core_draw = ImageDraw.Draw(core_mask)
+    core_spread = max(2, int(pad * 0.12))
     core_draw.rectangle(
         [pad - core_spread, pad - core_spread, pad + w + core_spread - 1, pad + h + core_spread - 1],
-        fill=(*core_rgb, 210),
+        fill=200,
     )
-    core_layer = core_layer.filter(ImageFilter.GaussianBlur(radius=max(3.0, pad * 0.22)))
+    core_mask = core_mask.filter(ImageFilter.GaussianBlur(radius=max(3.0, pad * 0.20)))
+    core_layer = Image.new("RGBA", (canvas_w, canvas_h), (*core_rgb, 0))
+    core_layer.putalpha(core_mask)
 
     if bg_hex and bg_hex.strip().lower() not in ("transparent", "none"):
         bg_rgb = _hex_to_rgb_tuple(bg_hex)
         canvas = Image.new("RGBA", (canvas_w, canvas_h), (*bg_rgb, 255))
+        canvas = Image.alpha_composite(canvas, outer_layer)
+        canvas = Image.alpha_composite(canvas, core_layer)
     else:
-        canvas = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
-
-    canvas = Image.alpha_composite(canvas, outer_layer)
-    canvas = Image.alpha_composite(canvas, core_layer)
+        # Composite glow layers without black-premultiplied RGB darkening
+        canvas = Image.alpha_composite(outer_layer, core_layer)
+        if dither_alpha:
+            # Sixel only supports 1-bit transparency: dither alpha to 0 or 255
+            # so outer pixels are cleanly transparent with no dark box or rings.
+            binary_alpha = canvas.getchannel("A").convert("1", dither=Image.Dither.FLOYDSTEINBERG).convert("L")
+            canvas.putalpha(binary_alpha)
 
     # Subtle crisp 2px amber rim right behind the sharp cover
-    rim_px = max(1, min(3, pad // 24))
+    rim_px = max(1, min(3, pad // 20))
     rim_draw = ImageDraw.Draw(canvas)
     rim_draw.rectangle(
         [pad - rim_px, pad - rim_px, pad + w + rim_px - 1, pad + h + rim_px - 1],
-        fill=(*border_rgb, 235),
+        fill=(*border_rgb, 255),
     )
     canvas.paste(src, (pad, pad), src)
 
@@ -412,13 +422,14 @@ def render_glow_album_art(
     url: str,
     img: Image.Image,
     bg_hex: Optional[str] = None,
+    dither_alpha: bool = False,
 ) -> Image.Image:
-    """Return cached Arcane-glowed PIL image for TGP (RGBA) or Sixel (RGB on bg_hex)."""
+    """Return cached Arcane-glowed PIL image for TGP (RGBA) or Sixel (1-bit dithered RGBA)."""
     upgraded = upgrade_thumbnail_url(url) if url else ""
-    cache_key = (upgraded, bg_hex)
+    cache_key = (upgraded, f"{bg_hex or ''}:d{int(dither_alpha)}")
     if upgraded and cache_key in _GLOW_CACHE:
         return _GLOW_CACHE[cache_key]
-    glowed = apply_arcane_glow(img, bg_hex=bg_hex)
+    glowed = apply_arcane_glow(img, bg_hex=bg_hex, dither_alpha=dither_alpha)
     if upgraded:
         _GLOW_CACHE[cache_key] = glowed
     return glowed
