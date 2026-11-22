@@ -31,8 +31,8 @@ from bard.ui.spectrum import format_ms, render_arcane_bar
 
 try:
     from textual_image.widget import (
-        AutoImage as _TextualAutoImage,
         AutoRenderable as _TextualAutoRenderable,
+        Image as _TextualAutoImage,
         SixelRenderable as _TextualSixelRenderable,
         TGPRenderable as _TextualTGPRenderable,
     )

@@ -414,3 +414,49 @@ def test_transparent_terminal_background_and_ansi_patch():
             assert all(s.style.bgcolor is None for s in cap_styles)
 
     asyncio.run(_run())
+
+
+def test_artifact_panel_sixel_mode_renders_sixel_lines():
+    import io
+    from unittest.mock import MagicMock, patch
+    from PIL import Image as PILImage
+    from textual.geometry import Region
+    from textual_image.widget import SixelImage, SixelRenderable
+    import bard.ui.stage_widgets as sw
+
+    img = PILImage.new("RGB", (32, 32), color=(255, 123, 0))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    resp = MagicMock(status_code=200, content=buf.getvalue())
+
+    class TestApp(App):
+        def compose(self) -> ComposeResult:
+            yield sw.ArtifactPanel()
+
+    async def _run():
+        with (
+            patch.object(sw, "_TextualAutoImage", SixelImage),
+            patch.object(sw, "_TextualAutoRenderable", SixelRenderable),
+            patch("bard.art.requests.get", return_value=resp),
+        ):
+            app = TestApp()
+            async with app.run_test(size=(120, 42)) as pilot:
+                panel = app.query_one(sw.ArtifactPanel)
+                panel.set_track(
+                    {
+                        "id": "trk_sixel",
+                        "title": "Sixel Track",
+                        "artist": "Artist",
+                        "album": "Album",
+                        "album_art_url": "https://example.com/sixel_regression.jpg",
+                    },
+                    queue_pos=(1, 1),
+                )
+                await pilot.pause()
+                box = panel.query_one("#art-box", SixelImage)
+                assert box.size.width >= 30 and box.size.height >= 15
+                assert len(box.children) == 1
+                lines = box.children[0].render_lines(Region(0, 0, box.size.width, box.size.height))
+                assert any("\x1bP" in seg.text for ln in lines for seg in ln)
+
+    asyncio.run(_run())
