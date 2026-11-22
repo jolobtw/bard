@@ -341,11 +341,13 @@ class ArtifactPanel(Widget):
                 if art_url != self._last_art_url or self._last_dims != (art_w, art_h):
                     pil_img = fetch_pil_image(art_url)
                     if pil_img is not None:
-                        sixel_mode = _is_sixel_mode()
-                        glow_img = render_glow_album_art(art_url, pil_img, bg_hex=None, dither_alpha=sixel_mode)
+                        if _is_sixel_mode():
+                            display_img = pil_img
+                        else:
+                            display_img = render_glow_album_art(art_url, pil_img, bg_hex=None)
                         art_w_widget.styles.width = art_w + 4
                         art_w_widget.styles.height = art_h + 2
-                        art_w_widget.image = glow_img
+                        art_w_widget.image = display_img
                         self._last_art_url = art_url
                         self._last_dims = (art_w, art_h)
                     else:

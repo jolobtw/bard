@@ -353,31 +353,13 @@ def apply_arcane_glow(
     outer_hex: str = "#FF4500",
     border_hex: str = "#FF9E2C",
     bg_hex: Optional[str] = None,
-    dither_alpha: bool = False,
 ) -> Image.Image:
-    """Composite a soft backlit Obsidian & Ember glow (TGP RGBA) or crisp layered rim (Sixel 1-bit alpha)."""
+    """Composite a soft backlit Obsidian & Ember Gaussian glow behind album art (TGP RGBA)."""
     src = img.convert("RGBA")
     w, h = src.size
     outer_rgb = _hex_to_rgb_tuple(outer_hex)
     core_rgb = _hex_to_rgb_tuple(glow_hex)
     border_rgb = _hex_to_rgb_tuple(border_hex)
-
-    # Sixel only supports 1-bit alpha (no semi-transparency), so a blurred glow
-    # either paints a dark box or dithers into speckled pixels. Use a clean,
-    # razor-sharp layered Arcane ember rim on a transparent canvas instead.
-    if dither_alpha:
-        rim_outer = max(2, min(4, min(w, h) // 130))
-        rim_inner = max(2, min(4, min(w, h) // 130))
-        pad = rim_outer + rim_inner
-        canvas = Image.new("RGBA", (w + pad * 2, h + pad * 2), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(canvas)
-        draw.rectangle([0, 0, w + pad * 2 - 1, h + pad * 2 - 1], fill=(*outer_rgb, 255))
-        draw.rectangle(
-            [rim_outer, rim_outer, w + pad * 2 - rim_outer - 1, h + pad * 2 - rim_outer - 1],
-            fill=(*border_rgb, 255),
-        )
-        canvas.paste(src, (pad, pad), src)
-        return canvas
 
     pad = max(12, int(min(w, h) * 0.10))
     canvas_w = w + pad * 2
@@ -433,14 +415,13 @@ def render_glow_album_art(
     url: str,
     img: Image.Image,
     bg_hex: Optional[str] = None,
-    dither_alpha: bool = False,
 ) -> Image.Image:
-    """Return cached Arcane-glowed PIL image for TGP (RGBA) or Sixel (1-bit dithered RGBA)."""
+    """Return cached Arcane-glowed PIL image for Kitty TGP (RGBA)."""
     upgraded = upgrade_thumbnail_url(url) if url else ""
-    cache_key = (upgraded, f"{bg_hex or ''}:d{int(dither_alpha)}")
+    cache_key = (upgraded, bg_hex)
     if upgraded and cache_key in _GLOW_CACHE:
         return _GLOW_CACHE[cache_key]
-    glowed = apply_arcane_glow(img, bg_hex=bg_hex, dither_alpha=dither_alpha)
+    glowed = apply_arcane_glow(img, bg_hex=bg_hex)
     if upgraded:
         _GLOW_CACHE[cache_key] = glowed
     return glowed
