@@ -455,7 +455,8 @@ def test_artifact_panel_sixel_mode_renders_sixel_lines():
                 await pilot.pause()
                 box = panel.query_one("#art-box", SixelImage)
                 assert box.size.width >= 30 and box.size.height >= 15
-                assert box.image is not None and box.image.size == (32, 32)  # Borderless in Sixel mode
+                assert box.size.width == box.size.height * 2  # Square 2:1 cell aspect ratio
+                assert box.image is not None and box.image.size == (34, 34)  # 1px gray border in Sixel mode
                 assert len(box.children) == 1
                 lines = box.children[0].render_lines(Region(0, 0, box.size.width, box.size.height))
                 assert any("\x1bP" in seg.text for ln in lines for seg in ln)

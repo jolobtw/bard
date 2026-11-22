@@ -11,7 +11,13 @@ from textual.containers import Horizontal, Vertical
 from textual.widget import Widget
 from textual.widgets import Input, Static
 
-from bard.art import fetch_pil_image, frame_art_ansi, render_album_art, render_glow_album_art
+from bard.art import (
+    fetch_pil_image,
+    frame_art_ansi,
+    render_album_art,
+    render_bordered_album_art,
+    render_glow_album_art,
+)
 from bard.models import Track
 from bard.ui.palette import (
     AMBER_CORE,
@@ -85,6 +91,7 @@ class ArtifactPanel(Widget):
         width: 100%;
         height: 1fr;
         align: center middle;
+        padding: 1 0;
     }}
 
     #art-box {{
@@ -225,12 +232,12 @@ class ArtifactPanel(Widget):
             except Exception:
                 app_h = 40
             controls_h = 4 if (app_h < 34 or h < 24) else 8
-            avail_h = h - controls_h - 8
+            avail_h = h - controls_h - 10
             if avail_h < 3:
                 return (min(48, max_w), 0)
-            art_h = min(24, avail_h, max(3, max_w // 2))
+            art_h = min(22, avail_h, max(3, max_w // 2))
         else:
-            art_h = max(3, min(24, h - 8, max(3, max_w // 2)))
+            art_h = max(3, min(22, h - 10, max(3, max_w // 2)))
         art_w = max(12, min(max_w, art_h * 2))
         return (art_w, art_h)
 
@@ -342,11 +349,13 @@ class ArtifactPanel(Widget):
                     pil_img = fetch_pil_image(art_url)
                     if pil_img is not None:
                         if _is_sixel_mode():
-                            display_img = pil_img
+                            display_img = render_bordered_album_art(art_url, pil_img, border_hex=BORDER_SLATE)
+                            art_w_widget.styles.width = art_w
+                            art_w_widget.styles.height = art_h
                         else:
                             display_img = render_glow_album_art(art_url, pil_img, bg_hex=None)
-                        art_w_widget.styles.width = art_w + 4
-                        art_w_widget.styles.height = art_h + 2
+                            art_w_widget.styles.width = art_w + 4
+                            art_w_widget.styles.height = art_h + 2
                         art_w_widget.image = display_img
                         self._last_art_url = art_url
                         self._last_dims = (art_w, art_h)

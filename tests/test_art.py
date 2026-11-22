@@ -183,4 +183,19 @@ def test_apply_arcane_glow_tgp_rgba():
     assert c1 is c2
 
 
+def test_add_simple_border_for_sixel():
+    from bard.art import add_simple_border, render_bordered_album_art
+
+    cover = Image.new("RGB", (32, 32), color=(20, 40, 80))
+    bordered = add_simple_border(cover, border_hex="#2A2D36")
+    assert bordered.mode == "RGB"
+    assert bordered.size == (34, 34)
+    assert bordered.getpixel((0, 0)) == (42, 45, 54)
+    assert bordered.getpixel((1, 1)) == (20, 40, 80)
+
+    b1 = render_bordered_album_art("https://example.com/border_test.jpg", cover, border_hex="#2A2D36")
+    b2 = render_bordered_album_art("https://example.com/border_test.jpg", cover, border_hex="#2A2D36")
+    assert b1 is b2
+
+
 

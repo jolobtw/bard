@@ -19,6 +19,7 @@ except Exception:
 _ART_CACHE: Dict[Tuple[str, int, int], str] = {}
 _PIL_CACHE: Dict[str, Image.Image] = {}
 _GLOW_CACHE: Dict[Tuple[str, Optional[str]], Image.Image] = {}
+_BORDER_CACHE: Dict[Tuple[str, str], Image.Image] = {}
 
 
 def upgrade_thumbnail_url(url: str, target_size: int = 544) -> str:
@@ -425,3 +426,33 @@ def render_glow_album_art(
     if upgraded:
         _GLOW_CACHE[cache_key] = glowed
     return glowed
+
+
+def add_simple_border(
+    img: Image.Image,
+    border_hex: str = "#2A2D36",
+) -> Image.Image:
+    """Wrap PIL album art in a clean, thin border matching container borders."""
+    src = img.convert("RGB")
+    w, h = src.size
+    border_px = max(1, min(2, min(w, h) // 250))
+    border_rgb = _hex_to_rgb_tuple(border_hex)
+    canvas = Image.new("RGB", (w + border_px * 2, h + border_px * 2), border_rgb)
+    canvas.paste(src, (border_px, border_px))
+    return canvas
+
+
+def render_bordered_album_art(
+    url: str,
+    img: Image.Image,
+    border_hex: str = "#2A2D36",
+) -> Image.Image:
+    """Return cached thin-bordered PIL image for Sixel terminals without alpha glow."""
+    upgraded = upgrade_thumbnail_url(url) if url else ""
+    cache_key = (upgraded, border_hex)
+    if upgraded and cache_key in _BORDER_CACHE:
+        return _BORDER_CACHE[cache_key]
+    bordered = add_simple_border(img, border_hex=border_hex)
+    if upgraded:
+        _BORDER_CACHE[cache_key] = bordered
+    return bordered
