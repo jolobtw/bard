@@ -9,7 +9,7 @@ from textual import events
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widget import Widget
-from textual.widgets import Input, Static
+from textual.widgets import Static
 
 from bard.art import (
     fetch_pil_image,
@@ -519,7 +519,7 @@ class _QueueListView(Widget):
 
 
 class QueuePanel(Widget):
-    """Center column: live-filterable active playlist queue."""
+    """Right column: active playlist queue."""
 
     DEFAULT_CSS = f"""
     QueuePanel {{
@@ -533,37 +533,7 @@ class QueuePanel(Widget):
     #queue-header {{
         width: 100%;
         height: 1;
-    }}
-
-    #queue-filter-row {{
-        width: 100%;
-        height: 1;
-        background: transparent;
-        margin: 0 0 1 0;
-    }}
-
-    #queue-filter-prefix {{
-        width: 3;
-        height: 1;
-        color: {AMBER_CORE};
-        background: transparent;
-        text-style: bold;
-        content-align: center middle;
-    }}
-
-    #queue-filter {{
-        width: 1fr;
-        height: 1;
-        border: none;
-        padding: 0;
-        background: transparent;
-        color: {TEXT_MAIN};
-    }}
-
-    #queue-filter:focus {{
-        border: none;
-        background: {BG_ELEVATED};
-        color: {AMBER_PEAK};
+        margin-bottom: 1;
     }}
     """
 
@@ -576,38 +546,24 @@ class QueuePanel(Widget):
         self.on_select_index = on_select_index
         self._tracks: List[Track] = []
         self._current_index: int = -1
-        self._query: str = ""
-        self._filtered_entries: List[Tuple[int, Track]] = []
+        self._entries: List[Tuple[int, Track]] = []
         self._cursor_pos: int = 0
 
     def compose(self) -> ComposeResult:
         yield Static(id="queue-header")
-        with Horizontal(id="queue-filter-row"):
-            yield Static("/", id="queue-filter-prefix")
-            yield Input(placeholder="filter...", id="queue-filter")
         yield _QueueListView(on_click_row=self._handle_row_click, id="queue-list")
 
     def on_mount(self) -> None:
-        self._apply_filter()
+        self._sync_entries()
 
     def on_resize(self, event: Any = None) -> None:
         if self.is_mounted:
             self._render_chrome()
 
-    def on_input_changed(self, event: Input.Changed) -> None:
-        if event.input.id == "queue-filter":
-            self._query = event.value or ""
-            self._cursor_pos = 0
-            self._apply_filter()
-
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        if event.input.id == "queue-filter":
-            self.blur_filter(clear=False)
-
-    def _handle_row_click(self, filtered_idx: int) -> None:
-        if 0 <= filtered_idx < len(self._filtered_entries):
-            self._cursor_pos = filtered_idx
-            orig_idx = self._filtered_entries[filtered_idx][0]
+    def _handle_row_click(self, row_idx: int) -> None:
+        if 0 <= row_idx < len(self._entries):
+            self._cursor_pos = row_idx
+            orig_idx = self._entries[row_idx][0]
             self._sync_view()
             if self.on_select_index:
                 self.on_select_index(orig_idx)
@@ -616,20 +572,12 @@ class QueuePanel(Widget):
         """Replace queue snapshot and active playing track index."""
         self._tracks = list(tracks)
         self._current_index = current_index
-        self._apply_filter()
+        self._sync_entries()
 
-    def _apply_filter(self) -> None:
-        q = self._query.strip().lower()
-        if not q:
-            self._filtered_entries = list(enumerate(self._tracks))
-        else:
-            self._filtered_entries = [
-                (i, t)
-                for i, t in enumerate(self._tracks)
-                if q in (t.title or "").lower() or q in (t.artist or "").lower()
-            ]
-        if self._filtered_entries:
-            self._cursor_pos = max(0, min(self._cursor_pos, len(self._filtered_entries) - 1))
+    def _sync_entries(self) -> None:
+        self._entries = list(enumerate(self._tracks))
+        if self._entries:
+            self._cursor_pos = max(0, min(self._cursor_pos, len(self._entries) - 1))
         else:
             self._cursor_pos = 0
         self._sync_view()
@@ -639,7 +587,7 @@ class QueuePanel(Widget):
             return
         try:
             list_view = self.query_one("#queue-list", _QueueListView)
-            list_view.set_entries(self._filtered_entries, self._current_index, self._cursor_pos)
+            list_view.set_entries(self._entries, self._current_index, self._cursor_pos)
         except Exception:
             pass
         self._render_chrome()
@@ -654,72 +602,20 @@ class QueuePanel(Widget):
             return
 
         left_h = "PLAYLIST QUEUE" if w >= 28 else "QUEUE"
-        right_h = "[J/K]+[ENTER]" if w >= 28 else "[J/K]"
-        if len(left_h) + len(right_h) + 1 > w:
-            right_h = ""
-        gap_h = max(1, w - len(left_h) - len(right_h)) if right_h else 0
-        hdr.update(
-            Text.from_markup(
-                f"[bold {AMBER_GLOW}]{left_h}[/]{' ' * gap_h}[{TEXT_MUTED}]{markup_escape(right_h)}[/]"
-                if right_h
-                else f"[bold {AMBER_GLOW}]{left_h}[/]"
-            ),
-            layout=False,
-        )
+        hdr.update(Text.from_markup(f"[bold {AMBER_GLOW}]{left_h}[/]"), layout=False)
 
     def move_cursor(self, delta: int) -> None:
-        """Move keyboard selection cursor within the filtered queue."""
-        if not self._filtered_entries:
+        """Move keyboard selection cursor within the queue."""
+        if not self._entries:
             return
-        self._cursor_pos = max(0, min(len(self._filtered_entries) - 1, self._cursor_pos + delta))
+        self._cursor_pos = max(0, min(len(self._entries) - 1, self._cursor_pos + delta))
         self._sync_view()
 
     def selected_original_index(self) -> Optional[int]:
         """Return the original queue index of the currently highlighted row, or None."""
-        if 0 <= self._cursor_pos < len(self._filtered_entries):
-            return self._filtered_entries[self._cursor_pos][0]
+        if 0 <= self._cursor_pos < len(self._entries):
+            return self._entries[self._cursor_pos][0]
         return None
-
-    def focus_filter(self) -> None:
-        """Focus the live filter Input."""
-        if self.is_mounted:
-            try:
-                self.query_one("#queue-filter", Input).focus()
-            except Exception:
-                pass
-
-    def blur_filter(self, clear: bool = False) -> None:
-        """Blur the filter Input, optionally clearing the query."""
-        if not self.is_mounted:
-            return
-        try:
-            inp = self.query_one("#queue-filter", Input)
-            if clear:
-                inp.value = ""
-                self._query = ""
-                self._cursor_pos = 0
-                self._apply_filter()
-            if inp.has_focus and self.app:
-                self.app.set_focus(None)
-        except Exception:
-            pass
-
-    def clear_filter(self) -> None:
-        """Clear filter query and restore full queue view."""
-        self.blur_filter(clear=True)
-
-    def has_filter_focus(self) -> bool:
-        """Return True if the queue filter Input currently holds focus."""
-        if not self.is_mounted:
-            return False
-        try:
-            return bool(self.query_one("#queue-filter", Input).has_focus)
-        except Exception:
-            return False
-
-    def has_filter_text(self) -> bool:
-        """Return True if a non-empty filter query is currently active."""
-        return bool(self._query.strip())
 
 
 class _ClickableChip(Widget):

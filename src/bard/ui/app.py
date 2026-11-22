@@ -58,7 +58,6 @@ class BardApp(App):
         Binding("j", "queue_down", "Queue Down", show=False),
         Binding("k", "queue_up", "Queue Up", show=False),
         Binding("enter", "queue_play_selected", "Play Selected", show=False),
-        Binding("slash", "focus_queue_filter", "Filter Queue", show=False),
         Binding("left", "seek_backward", "Seek -10s", show=False),
         Binding("h", "seek_backward", "Seek -10s", show=False),
         Binding("right", "seek_forward", "Seek +10s", show=False),
@@ -483,7 +482,6 @@ class BardApp(App):
             "queue_down",
             "queue_up",
             "queue_play_selected",
-            "focus_queue_filter",
             "seek_backward",
             "seek_forward",
         }
@@ -710,15 +708,11 @@ class BardApp(App):
             self.drawer_widget.toggle()
 
     def action_close_drawer(self) -> None:
-        """Close drawer if open, or handle two-step Esc for the queue filter."""
+        """Close drawer if open."""
         if self.drawer_widget.is_open():
             self.drawer_widget.hide()
             self.drawer_widget.disabled = True
             self.set_focus(None)
-        elif self.stage_widget.is_queue_filter_focused():
-            self.stage_widget.blur_queue_filter(clear=False)
-        elif self.stage_widget.has_queue_filter_text():
-            self.stage_widget.clear_queue_filter()
 
     def action_cycle_output_device(self) -> None:
         """Cycle through available mpv audio output devices."""
@@ -751,10 +745,6 @@ class BardApp(App):
         idx = self.stage_widget.get_selected_queue_index()
         if idx is not None:
             self.play_track_at_index(idx)
-
-    def action_focus_queue_filter(self) -> None:
-        """Focus the live queue filter input."""
-        self.stage_widget.focus_queue_filter()
 
     def action_seek_backward(self) -> None:
         """Seek backward 10 seconds."""

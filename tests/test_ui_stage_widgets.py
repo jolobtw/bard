@@ -125,7 +125,7 @@ def test_artifact_panel_displays_art_after_empty_mount():
     asyncio.run(_run())
 
 
-def test_queue_panel_filter_cursor_empty_match_and_click():
+def test_queue_panel_cursor_and_click():
     from bard.ui.stage_widgets import QueuePanel
 
     selected = []
@@ -147,33 +147,16 @@ def test_queue_panel_filter_cursor_empty_match_and_click():
             await pilot.pause()
 
             assert len(panel.query("#queue-footer")) == 0
+            assert len(panel.query("#queue-filter")) == 0
+            assert len(panel.query("#queue-filter-row")) == 0
+            hdr_text = str(panel.query_one("#queue-header", Static).render())
+            assert "PLAYLIST QUEUE" in hdr_text
+            assert "J/K" not in hdr_text
+            assert "ENTER" not in hdr_text
             assert panel.selected_original_index() == 0
 
-            # Filter to "obelisk" -> index 1 in original queue
-            panel.focus_filter()
-            q_input = panel.query_one("#queue-filter", Input)
-            q_input.value = "obelisk"
-            await pilot.pause()
-            assert "Obsidian Obelisk" in panel.query_one("#queue-list").render().plain
-            assert panel.selected_original_index() == 1
-
-            # Blur keeping filter -> still filtered, cursor navigable
-            panel.blur_filter(clear=False)
-            await pilot.pause()
-            assert panel.has_filter_text() is True
-            assert panel.selected_original_index() == 1
-
-            # Filter to zero matches -> safe empty message, cursor returns None
-            q_input.value = "zzzzz_no_match"
-            await pilot.pause()
-            assert "No tracks in queue" in panel.query_one("#queue-list").render().plain
             panel.move_cursor(1)
-            assert panel.selected_original_index() is None
-
-            # Clear filter restores all 3 tracks; clicking row 2 triggers on_select_index(2)
-            panel.clear_filter()
-            await pilot.pause()
-            assert "Solar Eclipse" in panel.query_one("#queue-list").render().plain
+            assert panel.selected_original_index() == 1
             await pilot.click("#queue-list", offset=(4, 2))
             assert selected[-1] == 2
 

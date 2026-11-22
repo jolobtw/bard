@@ -800,21 +800,11 @@ def test_app_queue_sync_filter_two_step_esc_and_space_in_input(tmp_path):
             await asyncio.sleep(0.1)
             await pilot.pause()
 
-            # Focus queue filter with '/' and type 'track t' (includes space -> must NOT pause)
-            await pilot.press("slash")
-            await pilot.pause()
-            assert app.stage_widget.is_queue_filter_focused() is True
-            for ch in ("t", "r", "a", "c", "k", "space", "t"):
-                await pilot.press(ch)
-            await pilot.pause()
-            player.pause.assert_not_called()
-            assert app.stage_widget.has_queue_filter_text() is True
+            assert len(app.query("#queue-filter")) == 0
 
-            # First Escape blurs filter while keeping query active so Enter selects filtered Track Two
-            await pilot.press("escape")
+            # J / K navigate queue when drawer closed, Enter plays selected
+            await pilot.press("j")
             await pilot.pause()
-            assert app.stage_widget.is_queue_filter_focused() is False
-            assert app.stage_widget.has_queue_filter_text() is True
             assert app.stage_widget.get_selected_queue_index() == 1
 
             await pilot.press("enter")
@@ -822,15 +812,9 @@ def test_app_queue_sync_filter_two_step_esc_and_space_in_input(tmp_path):
             await pilot.pause()
             assert app.current_track == t2
 
-            # Second Escape clears filter when drawer is closed and filter is unfocused
-            await pilot.press("escape")
+            await pilot.press("k")
             await pilot.pause()
-            assert app.stage_widget.has_queue_filter_text() is False
-
-            # J / K navigate queue when drawer closed
-            await pilot.press("j")
-            await pilot.pause()
-            assert app.stage_widget.get_selected_queue_index() >= 1
+            assert app.stage_widget.get_selected_queue_index() == 0
 
     asyncio.run(_run())
 

@@ -250,48 +250,6 @@ class ZenStage(Widget):
                 pass
         return None
 
-    def focus_queue_filter(self) -> None:
-        """Focus QueuePanel filter input."""
-        if self.is_mounted:
-            try:
-                self.query_one("#queue-panel", QueuePanel).focus_filter()
-            except Exception:
-                pass
-
-    def blur_queue_filter(self, clear: bool = False) -> None:
-        """Blur QueuePanel filter input."""
-        if self.is_mounted:
-            try:
-                self.query_one("#queue-panel", QueuePanel).blur_filter(clear=clear)
-            except Exception:
-                pass
-
-    def clear_queue_filter(self) -> None:
-        """Clear QueuePanel filter text."""
-        if self.is_mounted:
-            try:
-                self.query_one("#queue-panel", QueuePanel).clear_filter()
-            except Exception:
-                pass
-
-    def is_queue_filter_focused(self) -> bool:
-        """Return True if QueuePanel filter input is currently focused."""
-        if self.is_mounted:
-            try:
-                return self.query_one("#queue-panel", QueuePanel).has_filter_focus()
-            except Exception:
-                pass
-        return False
-
-    def has_queue_filter_text(self) -> bool:
-        """Return True if QueuePanel has an active filter string."""
-        if self.is_mounted:
-            try:
-                return self.query_one("#queue-panel", QueuePanel).has_filter_text()
-            except Exception:
-                pass
-        return False
-
     def get_art_dimensions(self) -> Tuple[int, int]:
         """Return proportional album art dimensions from ArtifactPanel."""
         if self.is_mounted:
