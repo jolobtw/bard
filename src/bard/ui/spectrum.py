@@ -239,7 +239,7 @@ class SpectrumDeck(Widget):
 
     #spectrum-well {{
         width: 100%;
-        height: 9;
+        height: 4;
         background: transparent;
         content-align: center middle;
     }}
@@ -274,7 +274,7 @@ class SpectrumDeck(Widget):
             app_h = self.app.size.height if self.app else 40
         except Exception:
             app_h = 40
-        target_h = 4 if app_h < 32 else 8
+        target_h = 3 if app_h < 32 else 4
         try:
             well = self.query_one("#spectrum-well", Static)
             well.styles.height = target_h
@@ -327,7 +327,7 @@ class SpectrumDeck(Widget):
         if len(self._bins) != n_half:
             self._bins = generate_simulated_bins(self._phase, n_bins=n_half)
 
-        well_h = max(3, well.size.height or 9)
+        well_h = max(3, well.size.height or 4)
         spec_lines = render_spectrum_lines(self._bins, rows=well_h)
         well.update(Text.from_markup("\n".join(spec_lines)), layout=False)
 

@@ -209,6 +209,7 @@ def test_zen_stage_full_height_now_playing_and_queue_matched_spectrum():
 
             assert artifact.region.height == stage.region.height
             assert spectrum.region.width == queue.region.width
+            assert spectrum.query_one("#spectrum-well").size.height == 4
             assert artifact.region.right <= spectrum.region.x
             assert spectrum.region.bottom <= queue.region.y
 
