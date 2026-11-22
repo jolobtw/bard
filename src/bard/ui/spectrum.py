@@ -111,13 +111,33 @@ def _row_color(row_from_bottom: int, rows: int) -> str:
     return interpolate_rgb(_SPEC_CORE_RGB, _SPEC_PEAK_RGB, (t - 0.45) / 0.55)
 
 
-def render_spectrum_lines(half_levels: Sequence[float], rows: int = 8) -> List[str]:
+def render_spectrum_lines(
+    half_levels: Sequence[float],
+    rows: int = 8,
+    target_width: Optional[int] = None,
+) -> List[str]:
     """Render center-outward spectrum columns with 1-space bar gaps as top-to-bottom Rich lines."""
     rows = max(3, rows)
-    full_levels = mirror_spectrum_bins(half_levels)
-    if not full_levels:
+    half = list(half_levels)
+    if not half:
         return ["" for _ in range(rows)]
 
+    center_gap = 1
+    if target_width is not None and target_width >= 7:
+        if target_width % 2 == 1:
+            n_bars = (target_width + 1) // 2
+            if n_bars == 2 * len(half) - 1 and len(half) > 1:
+                full_levels = list(reversed(half[1:])) + half
+            else:
+                full_levels = mirror_spectrum_bins(half)
+        else:
+            full_levels = mirror_spectrum_bins(half)
+            wings_w = 4 * len(half) - 2
+            center_gap = max(2, target_width - wings_w)
+    else:
+        full_levels = mirror_spectrum_bins(half)
+
+    split_idx = len(full_levels) // 2
     lines: List[str] = []
     for top_idx in range(rows):
         row_from_bottom = rows - 1 - top_idx
@@ -133,7 +153,12 @@ def render_spectrum_lines(half_levels: Sequence[float], rows: int = 8) -> List[s
                 row_cells.append(" ")
             else:
                 row_cells.append(f"[{color}]{ch}[/]")
-        lines.append(" ".join(row_cells))
+        if center_gap > 1:
+            left_str = " ".join(row_cells[:split_idx])
+            right_str = " ".join(row_cells[split_idx:])
+            lines.append(f"{left_str}{' ' * center_gap}{right_str}")
+        else:
+            lines.append(" ".join(row_cells))
     return lines
 
 
@@ -240,6 +265,7 @@ class SpectrumDeck(Widget):
     #spectrum-well {{
         width: 100%;
         height: 4;
+        padding: 0 1;
         background: transparent;
         content-align: center middle;
     }}
@@ -301,14 +327,21 @@ class SpectrumDeck(Widget):
         self._bins = generate_simulated_bins(self._phase, n_bins=self._half_bin_count(), prev_bins=self._bins)
         self._render_well()
 
-    def _half_bin_count(self) -> int:
+    def _target_well_width(self) -> int:
         well_w = 0
         try:
             well_w = self.query_one("#spectrum-well", Static).size.width
         except Exception:
             pass
         w = well_w or self.size.width or (self.app.size.width - 4 if self.app else 100)
-        return max(6, (max(24, w) + 1) // 4)
+        return max(24, w - 2)
+
+    def _half_bin_count(self) -> int:
+        target_w = self._target_well_width()
+        if target_w % 2 == 1:
+            n_bars = (target_w + 1) // 2
+            return max(6, (n_bars + 1) // 2)
+        return max(6, target_w // 4)
 
     def _render_well(self) -> None:
         if not self.is_mounted:
@@ -328,7 +361,8 @@ class SpectrumDeck(Widget):
             self._bins = generate_simulated_bins(self._phase, n_bins=n_half)
 
         well_h = max(3, well.size.height or 4)
-        spec_lines = render_spectrum_lines(self._bins, rows=well_h)
+        target_w = self._target_well_width()
+        spec_lines = render_spectrum_lines(self._bins, rows=well_h, target_width=target_w)
         well.update(Text.from_markup("\n".join(spec_lines)), layout=False)
 
     def set_playing(self, is_playing: bool) -> None:

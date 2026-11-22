@@ -70,7 +70,7 @@ def test_render_spectrum_lines_gradient_and_blocks():
 
 
 def test_spectrum_deck_expands_full_width():
-    from bard.ui.spectrum import SpectrumDeck
+    from bard.ui.spectrum import SeekBar, SpectrumDeck
 
     class TestApp(App):
         def compose(self) -> ComposeResult:
@@ -84,8 +84,11 @@ def test_spectrum_deck_expands_full_width():
             await pilot.pause()
             well_w = deck.query_one("#spectrum-well").size.width
             bottom_line = deck.query_one("#spectrum-well").render().plain.splitlines()[-1]
-            # Spans nearly the full well width (exceeding old 56-col cap)
-            assert len(bottom_line) >= well_w - 4
+            bar_line = deck.query_one("#progress-bar", SeekBar).render().plain
+            # Leftmost and rightmost bars align exactly with SeekBar timestamps
+            assert len(bottom_line) == len(bar_line) == well_w - 2
+            assert bottom_line[0] in "▁▂▃▄▅▆▇█"
+            assert bottom_line[-1] in "▁▂▃▄▅▆▇█"
             assert len(bottom_line) > 56
 
     asyncio.run(_run())
