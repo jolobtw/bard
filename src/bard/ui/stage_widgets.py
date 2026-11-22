@@ -35,9 +35,9 @@ class ArtifactPanel(Widget):
 
     DEFAULT_CSS = f"""
     ArtifactPanel {{
-        width: 40%;
+        width: 42%;
         min-width: 36;
-        max-width: 48;
+        max-width: 56;
         height: 100%;
         background: transparent;
         border: round {BORDER_SLATE};
@@ -184,7 +184,7 @@ class ArtifactPanel(Widget):
         """Compute proportional album art size fitting inside the left column."""
         w = avail_width if avail_width is not None else (self.size.width or 36)
         h = avail_height if avail_height is not None else (self.size.height or 24)
-        art_w = max(12, min(32, w - 4))
+        max_w = max(12, w - 8)
         if self.show_controls:
             try:
                 app_h = self.app.size.height if self.app else 40
@@ -193,10 +193,11 @@ class ArtifactPanel(Widget):
             controls_h = 4 if (app_h < 34 or h < 24) else 8
             avail_h = h - controls_h - 8
             if avail_h < 3:
-                return (art_w, 0)
-            art_h = min(14, avail_h)
+                return (min(48, max_w), 0)
+            art_h = min(24, avail_h, max(3, max_w // 2))
         else:
-            art_h = max(3, min(14, h - 8))
+            art_h = max(3, min(24, h - 8, max(3, max_w // 2)))
+        art_w = max(12, min(max_w, art_h * 2))
         return (art_w, art_h)
 
     def set_track(

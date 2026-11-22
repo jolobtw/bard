@@ -188,3 +188,32 @@ def test_zen_stage_clickable_controls_queue_and_seek_volume():
             assert any(isinstance(c, tuple) and c[0] == "seek" for c in calls)
 
     asyncio.run(_test())
+
+
+def test_zen_stage_full_height_now_playing_and_queue_matched_spectrum():
+    from bard.ui.zen_stage import ArtifactPanel, QueuePanel, SpectrumDeck, ZenStage
+
+    class TestApp(App):
+        def compose(self) -> ComposeResult:
+            yield ZenStage()
+
+    async def _test():
+        app = TestApp()
+        async with app.run_test(size=(120, 42)) as pilot:
+            stage = app.query_one(ZenStage)
+            await pilot.pause()
+
+            artifact = stage.query_one("#artifact-panel", ArtifactPanel)
+            spectrum = stage.query_one("#spectrum-deck", SpectrumDeck)
+            queue = stage.query_one("#queue-panel", QueuePanel)
+
+            assert artifact.region.height == stage.region.height
+            assert spectrum.region.width == queue.region.width
+            assert artifact.region.right <= spectrum.region.x
+            assert spectrum.region.bottom <= queue.region.y
+
+            art_w, art_h = stage.get_art_dimensions()
+            assert art_w > 32
+            assert art_h > 14
+
+    asyncio.run(_test())

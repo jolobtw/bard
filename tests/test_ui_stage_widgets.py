@@ -343,9 +343,10 @@ def test_compact_80x24_no_clipping():
             assert len(stage.query("#queue-footer")) == 0
             assert len(stage.query("#controls-header")) == 0
 
+            from bard.ui.spectrum import SpectrumDeck
             from bard.ui.stage_widgets import ArtifactPanel, ControlsPanel, QueuePanel
-            deck = stage.query_one("#command-deck")
-            assert [type(c) for c in deck.children] == [ArtifactPanel, QueuePanel]
+            right_pane = stage.query_one("#right-pane")
+            assert [type(c) for c in right_pane.children] == [SpectrumDeck, QueuePanel]
             art_panel = stage.query_one(ArtifactPanel)
             queue_panel = stage.query_one(QueuePanel)
             assert art_panel.query_one(ControlsPanel).id == "controls-panel"

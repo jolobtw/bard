@@ -1,4 +1,4 @@
-"""Main Bard stage widget: two-tier spectrum + 3-column command deck + footer."""
+"""Main Bard stage widget: full-height Now Playing column + right Spectrum/Queue stack."""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ __all__ = [
 
 
 class ZenStage(Widget):
-    """Two-tier Obsidian & Ember stage composing SpectrumDeck and 3-column Command Deck."""
+    """Obsidian & Ember stage with full-height ArtifactPanel and right-aligned SpectrumDeck + QueuePanel."""
 
     DEFAULT_CSS = f"""
     ZenStage {{
@@ -54,9 +54,9 @@ class ZenStage(Widget):
         background: transparent;
     }}
 
-    #command-deck {{
-        width: 100%;
-        height: 1fr;
+    #right-pane {{
+        width: 1fr;
+        height: 100%;
         background: transparent;
     }}
 
@@ -64,7 +64,9 @@ class ZenStage(Widget):
         margin-right: 1;
     }}
 
-    QueuePanel {{
+    #right-pane > QueuePanel {{
+        width: 100%;
+        height: 1fr;
         margin-right: 0;
     }}
     """
@@ -106,20 +108,20 @@ class ZenStage(Widget):
         self._queue_index: int = -1
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="stage-root"):
-            yield SpectrumDeck(on_seek=self._handle_seek, id="spectrum-deck")
-            with Horizontal(id="command-deck"):
-                yield ArtifactPanel(
-                    on_prev=self._handle_prev,
-                    on_play_pause=self._handle_play_pause,
-                    on_next=self._handle_next,
-                    on_shuffle=self._handle_shuffle,
-                    on_repeat=self._handle_repeat,
-                    on_volume=self._handle_volume,
-                    on_mute=self._handle_mute,
-                    show_controls=True,
-                    id="artifact-panel",
-                )
+        with Horizontal(id="stage-root"):
+            yield ArtifactPanel(
+                on_prev=self._handle_prev,
+                on_play_pause=self._handle_play_pause,
+                on_next=self._handle_next,
+                on_shuffle=self._handle_shuffle,
+                on_repeat=self._handle_repeat,
+                on_volume=self._handle_volume,
+                on_mute=self._handle_mute,
+                show_controls=True,
+                id="artifact-panel",
+            )
+            with Vertical(id="right-pane"):
+                yield SpectrumDeck(on_seek=self._handle_seek, id="spectrum-deck")
                 yield QueuePanel(on_select_index=self._handle_select_queue_index, id="queue-panel")
 
     def on_mount(self) -> None:
@@ -299,9 +301,10 @@ class ZenStage(Widget):
                 pass
         w = self.size.width or (self.app.size.width if self.app else 100)
         h = self.size.height or (self.app.size.height if self.app else 40)
-        col_w = max(20, w // 3)
-        deck_h = max(14, h - 14)
-        return (max(18, min(32, col_w - 6)), max(7, min(14, deck_h - 10)))
+        col_w = max(36, min(56, int(w * 0.42)))
+        avail_h = max(3, h - 16)
+        art_h = min(24, avail_h, max(3, (col_w - 8) // 2))
+        return (max(12, min(col_w - 8, art_h * 2)), art_h)
 
     def update_volume(self, volume: int) -> None:
         """Update volume slider without re-rendering artwork or spectrum."""
