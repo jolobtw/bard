@@ -120,7 +120,7 @@ def test_main_cli_arg_version(capsys):
 
 def test_run_browser_auth_submits_on_double_enter(tmp_path):
     """Verify run_browser_auth reads pasted headers and stops on two blank lines."""
-    from bard.__main__ import run_browser_auth
+    from bard.__main__ import _normalize_pasted_headers, run_browser_auth
 
     browser_file = tmp_path / "browser.json"
     inputs = iter(["cookie: SAPISID=xyz", "x-goog-authuser: 0", "", ""])
@@ -131,4 +131,15 @@ def test_run_browser_auth_submits_on_double_enter(tmp_path):
             filepath=str(browser_file),
             headers_raw="cookie: SAPISID=xyz\nx-goog-authuser: 0",
         )
+
+    curl_sample = (
+        "curl 'https://music.youtube.com/youtubei/v1/browse' \\\n"
+        "  -H 'authorization: SAPISIDHASH 123_abc' \\\n"
+        "  -b 'SAPISID=xyz; SID=123' \\\n"
+        "  -H 'x-goog-authuser: 0'"
+    )
+    normalized = _normalize_pasted_headers(curl_sample)
+    assert "authorization: SAPISIDHASH 123_abc" in normalized
+    assert "cookie: SAPISID=xyz; SID=123" in normalized
+    assert "x-goog-authuser: 0" in normalized
 

@@ -96,8 +96,51 @@ def run_device_login(oauth: Optional[YTMusicOAuth] = None) -> bool:
         return False
 
 
+def _normalize_pasted_headers(raw: str) -> str:
+    """Accept either raw HTTP headers or a browser 'Copy as cURL' snippet."""
+    import re
+    import shlex
+
+    text = raw.strip()
+    if not text:
+        return ""
+
+    if text.lower().startswith("curl "):
+        # Handle bash (\) and Windows cmd (^) line continuations
+        joined = re.sub(r"\s*[\\^]\s*\r?\n\s*", " ", text)
+        # Unescape Windows cmd ^" / ^& / ^% sequences if present
+        if '^"' in joined:
+            joined = joined.replace('^"', '"').replace("^&", "&").replace("^%", "%")
+        try:
+            tokens = shlex.split(joined, posix=True)
+        except ValueError:
+            tokens = joined.split()
+
+        header_lines: list[str] = []
+        i = 0
+        while i < len(tokens):
+            tok = tokens[i]
+            if tok in ("-H", "--header") and i + 1 < len(tokens):
+                header_lines.append(tokens[i + 1])
+                i += 2
+            elif tok in ("-b", "--cookie") and i + 1 < len(tokens):
+                header_lines.append(f"cookie: {tokens[i + 1]}")
+                i += 2
+            else:
+                i += 1
+        if header_lines:
+            return "\n".join(header_lines)
+
+    # Strip HTTP/2 pseudo-headers (:authority, :method, etc.) if pasted from Chrome DevTools
+    cleaned_lines = [
+        ln for ln in text.splitlines()
+        if ln.strip() and not ln.lstrip().startswith(":")
+    ]
+    return "\n".join(cleaned_lines)
+
+
 def _read_pasted_headers() -> str:
-    """Read multi-line HTTP headers until EOF, 'DONE', or two consecutive blank lines."""
+    """Read multi-line HTTP headers (or cURL) until EOF, 'DONE', or two consecutive blank lines."""
     lines: list[str] = []
     blank_streak = 0
     while True:
@@ -114,7 +157,7 @@ def _read_pasted_headers() -> str:
         else:
             blank_streak = 0
             lines.append(line)
-    return "\n".join(lines).strip()
+    return _normalize_pasted_headers("\n".join(lines))
 
 
 def run_browser_auth(browser_path: Optional[object] = None) -> bool:
@@ -129,8 +172,9 @@ def run_browser_auth(browser_path: Optional[object] = None) -> bool:
         Panel(
             "[#A6ADC8]To connect YouTube Music directly (music-only playlists):\n\n"
             "  1. Open [#FFD166 underline]https://music.youtube.com[/] while signed in\n"
-            "  2. Open DevTools (F12) -> Network -> filter [#FFD166]browse[/] -> click a [#FFD166]POST[/] request\n"
-            "  3. Copy Request Headers (make sure [#FFD166]cookie[/] & [#FFD166]authorization[/] are included)\n"
+            "  2. Open DevTools (F12) -> Network -> filter [#FFD166]browse[/]\n"
+            "     (Click [#FFD166]Library[/] on the page if you don't see a [#FFD166]POST browse[/] request)\n"
+            "  3. Right-click a [#FFD166]POST browse[/] request -> [#FFD166]Copy -> Copy as cURL (bash)[/]\n"
             "  4. Paste below, then press [#FFD166]Enter twice[/] (or type [#FFD166]DONE[/] + Enter)[/]",
             border_style="#FF7A00",
             title="✦ ❖ YOUTUBE MUSIC BROWSER AUTH ❖ ✦",
