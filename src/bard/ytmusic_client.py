@@ -17,7 +17,7 @@ from bard.config import get_default_config_dir
 from bard.models import Track
 from bard.oauth import YTMusicOAuth
 
-_TV_EXCLUDED_PLAYLIST_IDS = {"LL", "WL", "LM"}
+_TV_EXCLUDED_PLAYLIST_IDS = {"LL", "WL", "LM", "SE", "RDPN"}
 _TV_EXCLUDED_PLAYLIST_TITLES = {"liked videos", "watch later"}
 
 
@@ -807,7 +807,11 @@ class YTMusicClient:
             if not isinstance(p, dict):
                 continue
             playlist_id = p.get("playlistId") or p.get("id") or ""
+            if not playlist_id or playlist_id in _TV_EXCLUDED_PLAYLIST_IDS:
+                continue
             title = p.get("title") or "Untitled Playlist"
+            if title.strip().lower() in _TV_EXCLUDED_PLAYLIST_TITLES:
+                continue
             count = p.get("count") or p.get("trackCount") or p.get("itemCount") or ""
             thumb = _parse_thumbnail(p)
             playlists.append({
