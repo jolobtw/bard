@@ -326,6 +326,55 @@ def test_client_get_library_playlists_error():
         assert client.get_library_playlists() == []
 
 
+def test_client_get_library_playlists_tv_pagination():
+    client = YTMusicClient()
+
+    def _tile(pid: str, title: str) -> dict:
+        return {
+            "tileRenderer": {
+                "onSelectCommand": {"browseEndpoint": {"browseId": f"VL{pid}"}},
+                "metadata": {"tileMetadataRenderer": {"title": {"runs": [{"text": title}]}}},
+                "header": {"tileHeaderRenderer": {"thumbnail": {"thumbnails": [{"url": f"https://img/{pid}.jpg"}]}}},
+            }
+        }
+
+    page1 = {
+        "contents": {
+            "tvBrowseRenderer": {
+                "content": {
+                    "tvSurfaceContentRenderer": {
+                        "content": {
+                            "gridRenderer": {
+                                "items": [_tile("PL1", "First Playlist")],
+                                "continuations": [{"nextContinuationData": {"continuation": "tok_page_2"}}],
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    page2 = {
+        "continuationContents": {
+            "gridContinuation": {
+                "items": [_tile("PL2", "Second Playlist")],
+                "continuations": [],
+            }
+        }
+    }
+
+    with (
+        patch.object(client, "_ytm") as mock_ytm,
+        patch.object(client, "is_authenticated", return_value=True),
+        patch.object(client, "_post_tv_endpoint", side_effect=[page1, page2]) as mock_tv,
+    ):
+        mock_ytm.get_library_playlists.return_value = []
+        playlists = client.get_library_playlists()
+        assert [p["id"] for p in playlists] == ["PL1", "PL2"]
+        assert [p["title"] for p in playlists] == ["First Playlist", "Second Playlist"]
+        assert mock_tv.call_count == 2
+
+
 def test_client_get_history():
     client = YTMusicClient()
     with patch.object(client, "_ytm") as mock_ytm:

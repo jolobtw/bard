@@ -378,27 +378,72 @@ class YTMusicClient:
                         return tracks
         return tracks
 
-    def _fetch_tv_playlists(self, limit: int = 50) -> List[Dict[str, Any]]:
-        d = self._post_tv_endpoint("browse", {"browseId": "FEplaylist_aggregation"})
-        pl_items = d.get("contents", {}).get("tvBrowseRenderer", {}).get("content", {}).get("tvSurfaceContentRenderer", {}).get("content", {}).get("gridRenderer", {}).get("items", [])
-        playlists: List[Dict[str, Any]] = []
-        for it in pl_items:
+    @staticmethod
+    def _extract_tv_next_continuation(container: Dict[str, Any]) -> str:
+        for cont in container.get("continuations", []) or []:
+            if not isinstance(cont, dict):
+                continue
+            token = (
+                cont.get("nextContinuationData", {}).get("continuation")
+                or cont.get("reloadContinuationData", {}).get("continuation")
+            )
+            if isinstance(token, str) and token:
+                return token
+        return ""
+
+    def _parse_tv_playlist_items(
+        self,
+        items: Sequence[Dict[str, Any]],
+        playlists: List[Dict[str, Any]],
+        seen_ids: set[str],
+        limit: Optional[int],
+    ) -> None:
+        for it in items:
+            if not isinstance(it, dict):
+                continue
             tr = it.get("tileRenderer", {})
             browse_id = tr.get("onSelectCommand", {}).get("browseEndpoint", {}).get("browseId", "")
             pl_id = browse_id.replace("VL", "") if browse_id.startswith("VL") else browse_id
+            if not pl_id or pl_id in seen_ids:
+                continue
             title = _extract_text(tr.get("metadata", {}).get("tileMetadataRenderer", {}).get("title")) or "Untitled Playlist"
             header = tr.get("header", {}).get("tileHeaderRenderer", {})
             thumbs = header.get("thumbnail", {}).get("thumbnails", []) if isinstance(header, dict) else []
             thumb = thumbs[-1].get("url", "") if thumbs else ""
-            if pl_id:
-                playlists.append({
-                    "id": pl_id,
-                    "title": title,
-                    "count": "",
-                    "thumbnail_url": thumb,
-                })
-                if len(playlists) >= limit:
-                    break
+            seen_ids.add(pl_id)
+            playlists.append({
+                "id": pl_id,
+                "title": title,
+                "count": "",
+                "thumbnail_url": thumb,
+            })
+            if limit is not None and len(playlists) >= limit:
+                return
+
+    def _fetch_tv_playlists(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        d = self._post_tv_endpoint("browse", {"browseId": "FEplaylist_aggregation"})
+        grid = (
+            d.get("contents", {})
+            .get("tvBrowseRenderer", {})
+            .get("content", {})
+            .get("tvSurfaceContentRenderer", {})
+            .get("content", {})
+            .get("gridRenderer", {})
+        )
+        playlists: List[Dict[str, Any]] = []
+        seen_ids: set[str] = set()
+        self._parse_tv_playlist_items(grid.get("items", []) or [], playlists, seen_ids, limit)
+
+        seen_tokens: set[str] = set()
+        token = self._extract_tv_next_continuation(grid)
+        while token and token not in seen_tokens and (limit is None or len(playlists) < limit):
+            seen_tokens.add(token)
+            cont_resp = self._post_tv_endpoint("browse", {"continuation": token})
+            cont_grid = cont_resp.get("continuationContents", {}).get("gridContinuation", {})
+            if not cont_grid:
+                break
+            self._parse_tv_playlist_items(cont_grid.get("items", []) or [], playlists, seen_ids, limit)
+            token = self._extract_tv_next_continuation(cont_grid)
         return playlists
 
     def _fetch_tv_playlist_tracks(self, playlist_id: str) -> List[Track]:
@@ -688,7 +733,7 @@ class YTMusicClient:
                     break
         return tracks
 
-    def get_library_playlists(self, limit: int = 50) -> List[Dict[str, Any]]:
+    def get_library_playlists(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """Retrieve playlists from the user's library."""
         raw_playlists = []
         try:
@@ -718,7 +763,7 @@ class YTMusicClient:
                 "count": str(count) if count != "" else "",
                 "thumbnail_url": thumb,
             })
-            if len(playlists) >= limit:
+            if limit is not None and len(playlists) >= limit:
                 break
         return playlists
 
