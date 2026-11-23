@@ -96,6 +96,27 @@ def run_device_login(oauth: Optional[YTMusicOAuth] = None) -> bool:
         return False
 
 
+def _read_pasted_headers() -> str:
+    """Read multi-line HTTP headers until EOF, 'DONE', or two consecutive blank lines."""
+    lines: list[str] = []
+    blank_streak = 0
+    while True:
+        try:
+            line = input()
+        except EOFError:
+            break
+        if line.strip().upper() == "DONE":
+            break
+        if line.strip() == "":
+            blank_streak += 1
+            if lines and blank_streak >= 2:
+                break
+        else:
+            blank_streak = 0
+            lines.append(line)
+    return "\n".join(lines).strip()
+
+
 def run_browser_auth(browser_path: Optional[object] = None) -> bool:
     """Configure YouTube Music browser header auth (for YTM-only playlists)."""
     import ytmusicapi
@@ -107,13 +128,17 @@ def run_browser_auth(browser_path: Optional[object] = None) -> bool:
             "[#A6ADC8]To connect YouTube Music directly (music-only playlists):\n\n"
             "  1. Open [#FFD166 underline]https://music.youtube.com[/] while signed in\n"
             "  2. Open DevTools (F12) -> Network -> click any [#FFD166]/browse[/] request\n"
-            "  3. Copy the raw Request Headers, paste below, then press [#FFD166]Ctrl+Z + Enter[/] (Win) or [#FFD166]Ctrl+D[/] (Mac)[/]",
+            "  3. Copy the raw Request Headers, paste below, then press [#FFD166]Enter twice[/] (or type [#FFD166]DONE[/] + Enter)[/]",
             border_style="#FF7A00",
             title="✦ ❖ YOUTUBE MUSIC BROWSER AUTH ❖ ✦",
         )
     )
     try:
-        ytmusicapi.setup(filepath=str(target))
+        headers_raw = _read_pasted_headers()
+        if not headers_raw:
+            console.print("[bold red]No headers provided.[/]")
+            return False
+        ytmusicapi.setup(filepath=str(target), headers_raw=headers_raw)
         console.print(f"[bold #00E5FF]✦ Saved YouTube Music browser auth to {target}[/]")
         return True
     except Exception as exc:

@@ -117,3 +117,18 @@ def test_main_cli_arg_version(capsys):
     captured = capsys.readouterr()
     assert "Bard v0.2.0" in captured.out or "Bard v0.2.0" in captured.err
 
+
+def test_run_browser_auth_submits_on_double_enter(tmp_path):
+    """Verify run_browser_auth reads pasted headers and stops on two blank lines."""
+    from bard.__main__ import run_browser_auth
+
+    browser_file = tmp_path / "browser.json"
+    inputs = iter(["cookie: SAPISID=xyz", "x-goog-authuser: 0", "", ""])
+    with patch("builtins.input", side_effect=lambda: next(inputs)), \
+         patch("ytmusicapi.setup") as mock_setup:
+        assert run_browser_auth(browser_path=browser_file) is True
+        mock_setup.assert_called_once_with(
+            filepath=str(browser_file),
+            headers_raw="cookie: SAPISID=xyz\nx-goog-authuser: 0",
+        )
+
