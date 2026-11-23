@@ -387,7 +387,9 @@ def test_client_prefers_browser_auth_when_present(tmp_path):
         client = YTMusicClient(token_path=tmp_path / "oauth.json")
         assert client.is_authenticated() is True
         assert client._auth_mode == "browser"
-        mock_ytm_cls.assert_called_once_with(auth=str(browser_file))
+        mock_ytm_cls.assert_called_once_with(
+            auth={"cookie": "SAPISID=abc", "authorization": "SAPISIDHASH 0_0"}
+        )
 
 
 def test_client_get_history():

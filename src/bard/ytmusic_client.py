@@ -213,7 +213,21 @@ class YTMusicClient:
                 self._authenticated = False
         elif self._browser_auth_path.exists():
             try:
-                self._ytm = YTMusic(auth=str(self._browser_auth_path))
+                import json as _json
+
+                raw_browser = _json.loads(self._browser_auth_path.read_text(encoding="utf-8"))
+                if isinstance(raw_browser, dict):
+                    cleaned_browser = {
+                        k: v
+                        for k, v in raw_browser.items()
+                        if k.lower() not in ("content-encoding", "alt-used", "connection", "accept-encoding")
+                    }
+                    lower_keys = {k.lower() for k in cleaned_browser}
+                    if "cookie" in lower_keys and "authorization" not in lower_keys:
+                        cleaned_browser["authorization"] = "SAPISIDHASH 0_0"
+                    self._ytm = YTMusic(auth=cleaned_browser)
+                else:
+                    self._ytm = YTMusic(auth=str(self._browser_auth_path))
                 self._authenticated = True
                 self._auth_mode = "browser"
             except Exception as exc:

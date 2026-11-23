@@ -119,7 +119,9 @@ def _read_pasted_headers() -> str:
 
 def run_browser_auth(browser_path: Optional[object] = None) -> bool:
     """Configure YouTube Music browser header auth (for YTM-only playlists)."""
+    import json
     import ytmusicapi
+    from ytmusicapi import YTMusic
 
     target = browser_path if browser_path is not None else get_default_browser_auth_path()
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -127,8 +129,9 @@ def run_browser_auth(browser_path: Optional[object] = None) -> bool:
         Panel(
             "[#A6ADC8]To connect YouTube Music directly (music-only playlists):\n\n"
             "  1. Open [#FFD166 underline]https://music.youtube.com[/] while signed in\n"
-            "  2. Open DevTools (F12) -> Network -> click any [#FFD166]/browse[/] request\n"
-            "  3. Copy the raw Request Headers, paste below, then press [#FFD166]Enter twice[/] (or type [#FFD166]DONE[/] + Enter)[/]",
+            "  2. Open DevTools (F12) -> Network -> filter [#FFD166]browse[/] -> click a [#FFD166]POST[/] request\n"
+            "  3. Copy Request Headers (make sure [#FFD166]cookie[/] & [#FFD166]authorization[/] are included)\n"
+            "  4. Paste below, then press [#FFD166]Enter twice[/] (or type [#FFD166]DONE[/] + Enter)[/]",
             border_style="#FF7A00",
             title="✦ ❖ YOUTUBE MUSIC BROWSER AUTH ❖ ✦",
         )
@@ -139,7 +142,31 @@ def run_browser_auth(browser_path: Optional[object] = None) -> bool:
             console.print("[bold red]No headers provided.[/]")
             return False
         ytmusicapi.setup(filepath=str(target), headers_raw=headers_raw)
-        console.print(f"[bold #00E5FF]✦ Saved YouTube Music browser auth to {target}[/]")
+
+        # Normalize saved JSON so ytmusicapi always recognizes it as BROWSER auth
+        if target.exists():
+            data = json.loads(target.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                data = {
+                    k: v
+                    for k, v in data.items()
+                    if k.lower() not in ("content-encoding", "alt-used", "connection", "accept-encoding")
+                }
+                if "cookie" in {k.lower() for k in data} and "authorization" not in {k.lower() for k in data}:
+                    data["authorization"] = "SAPISIDHASH 0_0"
+                target.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+                # Verify that YouTube Music actually accepts the session
+                ytm = YTMusic(auth=data)
+                pls = ytm.get_library_playlists(limit=5)
+                if not pls:
+                    console.print(
+                        "[bold #FF7A00]⚠ Saved browser.json, but YouTube Music returned 0 playlists.[/]\n"
+                        "[#A6ADC8]Make sure you copied headers from a signed-in POST /youtubei/v1/browse request on music.youtube.com.[/]"
+                    )
+                    return False
+
+        console.print(f"[bold #00E5FF]✦ Verified & saved YouTube Music browser auth to {target}[/]")
         return True
     except Exception as exc:
         console.print(f"[bold red]Browser auth setup failed:[/] {exc}")
