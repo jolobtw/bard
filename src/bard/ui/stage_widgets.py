@@ -350,12 +350,10 @@ class ArtifactPanel(Widget):
                     if pil_img is not None:
                         if _is_sixel_mode():
                             display_img = render_bordered_album_art(art_url, pil_img, border_hex=BORDER_SLATE)
-                            art_w_widget.styles.width = art_w
-                            art_w_widget.styles.height = art_h
                         else:
                             display_img = render_glow_album_art(art_url, pil_img, bg_hex=None)
-                            art_w_widget.styles.width = art_w + 4
-                            art_w_widget.styles.height = art_h + 2
+                        art_w_widget.styles.width = "auto"
+                        art_w_widget.styles.height = "auto"
                         art_w_widget.image = display_img
                         self._last_art_url = art_url
                         self._last_dims = (art_w, art_h)
