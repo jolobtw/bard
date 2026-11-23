@@ -202,7 +202,8 @@ def test_smooth_halfblock_and_tgp_pixel_spectrum():
     assert img.getpixel((0, 79))[3] == 255  # Leftmost bar anchored at x=0
     assert img.getpixel((239, 79))[3] == 255  # Rightmost bar anchored at x=w-1
 
-    # SpectrumDeck switches to #spectrum-tgp in TGP mode when playing
+    # SpectrumDeck uses character-cell #spectrum-well even in TGP terminals so
+    # 16 FPS spectrum updates never evict Ghostty's TGP album-art cache.
     class TestApp(App):
         def compose(self) -> ComposeResult:
             yield sp.SpectrumDeck()
@@ -213,17 +214,9 @@ def test_smooth_halfblock_and_tgp_pixel_spectrum():
             async with app.run_test(size=(100, 20)) as pilot:
                 deck = app.query_one(sp.SpectrumDeck)
                 await pilot.pause()
-                tgp_w = deck.query_one("#spectrum-tgp")
-                assert tgp_w.display is False
-
+                assert len(deck.query("#spectrum-tgp")) == 0
                 deck.set_state(is_playing=True, has_track=True, progress_ms=5000, duration_ms=100000)
                 await pilot.pause()
-                assert tgp_w.display is True
-                assert isinstance(tgp_w.image, PILImage.Image)
-
-                deck.set_state(is_playing=False, has_track=True, progress_ms=5000, duration_ms=100000)
-                await pilot.pause()
-                assert tgp_w.display is False
-                assert tgp_w.image is None
+                assert any(ch in str(deck.query_one("#spectrum-well").render()) for ch in "▁▂▃▄▅▆▇█")
 
     asyncio.run(_run())

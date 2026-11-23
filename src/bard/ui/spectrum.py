@@ -454,14 +454,6 @@ class SpectrumDeck(Widget):
         background: transparent;
         content-align: center middle;
     }}
-
-    #spectrum-tgp {{
-        width: 100%;
-        height: 4;
-        padding: 0 1;
-        background: transparent;
-        display: none;
-    }}
     """
 
     def __init__(self, on_seek: Optional[Callable[[float], None]] = None, **kwargs: Any) -> None:
@@ -476,8 +468,6 @@ class SpectrumDeck(Widget):
 
     def compose(self) -> ComposeResult:
         yield Static(id="spectrum-well")
-        if _is_tgp_mode() and _TextualTGPImage is not None:
-            yield _TextualTGPImage(id="spectrum-tgp")
         yield SeekBar(on_seek=self.on_seek, id="progress-bar")
 
     def on_mount(self) -> None:
@@ -500,11 +490,6 @@ class SpectrumDeck(Widget):
         try:
             well = self.query_one("#spectrum-well", Static)
             well.styles.height = target_h
-        except Exception:
-            pass
-        try:
-            tgp_w = self.query_one("#spectrum-tgp")
-            tgp_w.styles.height = target_h
         except Exception:
             pass
 
@@ -553,17 +538,7 @@ class SpectrumDeck(Widget):
         except Exception:
             return
 
-        tgp_w = None
-        try:
-            tgp_w = self.query_one("#spectrum-tgp")
-        except Exception:
-            pass
-
         if not self.is_playing:
-            if tgp_w is not None:
-                tgp_w.display = False
-                tgp_w.image = None
-            well.display = True
             banner = f"[{BORDER_SLATE}]───────────[/]  [{TEXT_MUTED}]Awaiting Resonance[/]  [{BORDER_SLATE}]───────────[/]"
             well.update(Text.from_markup(banner), layout=False)
             return
@@ -576,19 +551,6 @@ class SpectrumDeck(Widget):
 
         well_h = max(3, well.size.height or 4)
         target_w = self._target_well_width()
-
-        if tgp_w is not None and _is_tgp_mode():
-            well.display = False
-            tgp_w.display = True
-            cell_w, cell_h = _get_cell_size() if _get_cell_size is not None else (10, 20)
-            px_w = max(64, target_w * max(4, cell_w))
-            px_h = max(24, well_h * max(8, cell_h))
-            tgp_w.image = render_spectrum_image(self._bins, width_px=px_w, height_px=px_h, peaks=self._peaks)
-            return
-
-        if tgp_w is not None:
-            tgp_w.display = False
-        well.display = True
         spec_lines = render_spectrum_lines(
             self._bins,
             rows=well_h,
