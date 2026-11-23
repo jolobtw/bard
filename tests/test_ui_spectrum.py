@@ -85,8 +85,9 @@ def test_spectrum_deck_expands_full_width():
             well_w = deck.query_one("#spectrum-well").size.width
             bottom_line = deck.query_one("#spectrum-well").render().plain.splitlines()[-1]
             bar_line = deck.query_one("#progress-bar", SeekBar).render().plain
-            # Leftmost and rightmost bars align exactly with SeekBar timestamps
-            assert len(bottom_line) == len(bar_line) == well_w - 2
+            # Visualizer never spills past SeekBar timestamps and keeps uniform 1-space bar gaps
+            assert well_w - 3 <= len(bottom_line) <= len(bar_line) == well_w - 2
+            assert "  " not in bottom_line
             assert bottom_line[0] in "▁▂▃▄▅▆▇█"
             assert bottom_line[-1] in "▁▂▃▄▅▆▇█"
             assert len(bottom_line) > 56

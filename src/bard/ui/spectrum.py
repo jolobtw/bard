@@ -252,28 +252,19 @@ def render_spectrum_lines(
     if not half:
         return ["" for _ in range(rows)]
 
-    center_gap = 1
     if target_width is not None and target_width >= 7:
-        if target_width % 2 == 1:
-            n_bars = (target_width + 1) // 2
-            if n_bars == 2 * len(half) - 1 and len(half) > 1:
-                full_levels = list(reversed(half[1:])) + half
-                full_peaks = (list(reversed(peaks[1:])) + list(peaks)) if (peaks and len(peaks) == len(half)) else None
-            else:
-                full_levels = mirror_spectrum_bins(half)
-                full_peaks = mirror_spectrum_bins(peaks) if (peaks and len(peaks) == len(half)) else None
+        odd_w = target_width if (target_width % 2 == 1) else (target_width - 1)
+        n_bars = (odd_w + 1) // 2
+        if n_bars == 2 * len(half) - 1 and len(half) > 1:
+            full_levels = list(reversed(half[1:])) + half
+            full_peaks = (list(reversed(peaks[1:])) + list(peaks)) if (peaks and len(peaks) == len(half)) else None
         else:
             full_levels = mirror_spectrum_bins(half)
             full_peaks = mirror_spectrum_bins(peaks) if (peaks and len(peaks) == len(half)) else None
-            wings_w = 4 * len(half) - 2
-            center_gap = max(2, target_width - wings_w)
     else:
         full_levels = mirror_spectrum_bins(half)
         full_peaks = mirror_spectrum_bins(peaks) if (peaks and len(peaks) == len(half)) else None
 
-    split_idx = len(full_levels) // 2
-    quarter_left = max(1, split_idx // 2)
-    quarter_right = min(len(full_levels) - 1, split_idx + (len(full_levels) - split_idx) // 2)
     lines: List[str] = []
     sub_rows = rows * 2
 
@@ -293,7 +284,6 @@ def render_spectrum_lines(
                 has_bot = filled_subs >= bot_sub + 0.35
                 has_top = filled_subs >= top_sub + 0.35
 
-                # Peak-hold pip check
                 pip_top = False
                 pip_bot = False
                 if full_peaks is not None:
@@ -329,21 +319,7 @@ def render_spectrum_lines(
                 else:
                     row_cells.append(f"[{color}]{ch}[/]")
 
-        if center_gap == 2:
-            left_str = " ".join(row_cells[:split_idx])
-            right_str = " ".join(row_cells[split_idx:])
-            lines.append(f"{left_str}  {right_str}")
-        elif center_gap >= 4:
-            # Distribute extra spaces symmetrically (2 in center, 1 each at quarters)
-            # so there is never a 4-space hole that looks like a missing middle bar.
-            q_l = " ".join(row_cells[:quarter_left])
-            q_ml = " ".join(row_cells[quarter_left:split_idx])
-            q_mr = " ".join(row_cells[split_idx:quarter_right])
-            q_r = " ".join(row_cells[quarter_right:])
-            mid_pad = " " * (center_gap - 2)
-            lines.append(f"{q_l}  {q_ml}{mid_pad}{q_mr}  {q_r}")
-        else:
-            lines.append(" ".join(row_cells))
+        lines.append(" ".join(row_cells))
     return lines
 
 
@@ -516,19 +492,24 @@ class SpectrumDeck(Widget):
 
     def _target_well_width(self) -> int:
         well_w = 0
+        bar_w = 0
         try:
             well_w = self.query_one("#spectrum-well", Static).size.width
         except Exception:
             pass
-        w = well_w or self.size.width or (self.app.size.width - 4 if self.app else 100)
+        try:
+            bar_w = self.query_one("#progress-bar", SeekBar).size.width
+        except Exception:
+            pass
+        candidates = [w for w in (well_w, bar_w) if w > 0]
+        w = min(candidates) if candidates else (self.size.width or (self.app.size.width - 4 if self.app else 100))
         return max(24, w - 2)
 
     def _half_bin_count(self) -> int:
         target_w = self._target_well_width()
-        if target_w % 2 == 1:
-            n_bars = (target_w + 1) // 2
-            return max(6, (n_bars + 1) // 2)
-        return max(6, target_w // 4)
+        odd_w = target_w if (target_w % 2 == 1) else (target_w - 1)
+        n_bars = (odd_w + 1) // 2
+        return max(6, (n_bars + 1) // 2)
 
     def _render_well(self) -> None:
         if not self.is_mounted:
