@@ -96,38 +96,88 @@ def run_device_login(oauth: Optional[YTMusicOAuth] = None) -> bool:
         return False
 
 
+def _extract_curl_headers(text: str) -> list[str]:
+    """Parse -H/--header and -b/--cookie arguments from cURL (POSIX, bash, or Windows)."""
+    import re
+
+    # Join line continuations (\ or ^ at end of line)
+    joined = re.sub(r"\s*[\\^]\s*\r?\n\s*", " ", text)
+
+    # Tokenize supporting $'...', '...', "...", and bare words (avoiding shlex pitfalls on $'...' / ^)
+    tokens: list[str] = []
+    i = 0
+    n = len(joined)
+    while i < n:
+        while i < n and joined[i].isspace():
+            i += 1
+        if i >= n:
+            break
+
+        if joined[i : i + 2] == "$'":
+            i += 2
+            buf: list[str] = []
+            while i < n and joined[i] != "'":
+                if joined[i] == "\\" and i + 1 < n:
+                    buf.append(joined[i + 1])
+                    i += 2
+                else:
+                    buf.append(joined[i])
+                    i += 1
+            i += 1  # skip closing '
+            tokens.append("".join(buf))
+        elif joined[i] == "'":
+            i += 1
+            start = i
+            while i < n and joined[i] != "'":
+                i += 1
+            tokens.append(joined[start:i])
+            i += 1
+        elif joined[i] == '"':
+            i += 1
+            buf = []
+            while i < n:
+                if joined[i] == "^" and i + 1 < n:
+                    buf.append(joined[i + 1])
+                    i += 2
+                elif joined[i] == "\\" and i + 1 < n and joined[i + 1] in ('"', "\\"):
+                    buf.append(joined[i + 1])
+                    i += 2
+                elif joined[i] == '"':
+                    i += 1
+                    break
+                else:
+                    buf.append(joined[i])
+                    i += 1
+            tokens.append("".join(buf))
+        else:
+            start = i
+            while i < n and not joined[i].isspace():
+                i += 1
+            tokens.append(joined[start:i])
+
+    header_lines: list[str] = []
+    idx = 0
+    while idx < len(tokens):
+        tok = tokens[idx]
+        if tok in ("-H", "--header") and idx + 1 < len(tokens):
+            header_lines.append(tokens[idx + 1])
+            idx += 2
+        elif tok in ("-b", "--cookie") and idx + 1 < len(tokens):
+            header_lines.append(f"cookie: {tokens[idx + 1]}")
+            idx += 2
+        else:
+            idx += 1
+    return header_lines
+
+
 def _normalize_pasted_headers(raw: str) -> str:
     """Accept either raw HTTP headers or a browser 'Copy as cURL' snippet."""
-    import re
-    import shlex
-
     text = raw.strip()
     if not text:
         return ""
 
     if text.lower().startswith("curl "):
-        # Handle bash (\) and Windows cmd (^) line continuations
-        joined = re.sub(r"\s*[\\^]\s*\r?\n\s*", " ", text)
-        # Unescape Windows cmd ^" / ^& / ^% sequences if present
-        if '^"' in joined:
-            joined = joined.replace('^"', '"').replace("^&", "&").replace("^%", "%")
-        try:
-            tokens = shlex.split(joined, posix=True)
-        except ValueError:
-            tokens = joined.split()
-
-        header_lines: list[str] = []
-        i = 0
-        while i < len(tokens):
-            tok = tokens[i]
-            if tok in ("-H", "--header") and i + 1 < len(tokens):
-                header_lines.append(tokens[i + 1])
-                i += 2
-            elif tok in ("-b", "--cookie") and i + 1 < len(tokens):
-                header_lines.append(f"cookie: {tokens[i + 1]}")
-                i += 2
-            else:
-                i += 1
+        header_lines = _extract_curl_headers(text)
         if header_lines:
             return "\n".join(header_lines)
 

@@ -143,3 +143,26 @@ def test_run_browser_auth_submits_on_double_enter(tmp_path):
     assert "cookie: SAPISID=xyz; SID=123" in normalized
     assert "x-goog-authuser: 0" in normalized
 
+    # Firefox / Zen Browser Copy as cURL (POSIX) with $'...' ANSI-C quoting & Copy as cURL (Windows)
+    zen_posix = (
+        "curl 'https://music.youtube.com/youtubei/v1/browse' \\\n"
+        "  --compressed \\\n"
+        "  -X POST \\\n"
+        "  -H $'Cookie: SAPISID=xyz; __Secure-1PSID=abc' \\\n"
+        "  -H 'X-Goog-AuthUser: 0' \\\n"
+        "  -H 'Authorization: SAPISIDHASH 123_abc'"
+    )
+    norm_zen = _normalize_pasted_headers(zen_posix)
+    assert "Cookie: SAPISID=xyz; __Secure-1PSID=abc" in norm_zen
+    assert "X-Goog-AuthUser: 0" in norm_zen
+    assert "Authorization: SAPISIDHASH 123_abc" in norm_zen
+
+    zen_win = (
+        'curl "https://music.youtube.com/youtubei/v1/browse" ^\n'
+        '  -H "Cookie: SAPISID=xyz" ^\n'
+        '  -H "X-Goog-AuthUser: 0"'
+    )
+    norm_win = _normalize_pasted_headers(zen_win)
+    assert "Cookie: SAPISID=xyz" in norm_win
+    assert "X-Goog-AuthUser: 0" in norm_win
+
