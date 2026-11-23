@@ -345,7 +345,11 @@ def test_client_get_library_playlists_tv_pagination():
                     "tvSurfaceContentRenderer": {
                         "content": {
                             "gridRenderer": {
-                                "items": [_tile("PL1", "First Playlist")],
+                                "items": [
+                                    _tile("LL", "Liked videos"),
+                                    _tile("WL", "Watch later"),
+                                    _tile("PL1", "First Playlist"),
+                                ],
                                 "continuations": [{"nextContinuationData": {"continuation": "tok_page_2"}}],
                             }
                         }
@@ -373,6 +377,17 @@ def test_client_get_library_playlists_tv_pagination():
         assert [p["id"] for p in playlists] == ["PL1", "PL2"]
         assert [p["title"] for p in playlists] == ["First Playlist", "Second Playlist"]
         assert mock_tv.call_count == 2
+
+
+def test_client_prefers_browser_auth_when_present(tmp_path):
+    browser_file = tmp_path / "browser.json"
+    browser_file.write_text('{"cookie": "SAPISID=abc"}', encoding="utf-8")
+
+    with patch("bard.ytmusic_client.YTMusic") as mock_ytm_cls:
+        client = YTMusicClient(token_path=tmp_path / "oauth.json")
+        assert client.is_authenticated() is True
+        assert client._auth_mode == "browser"
+        mock_ytm_cls.assert_called_once_with(auth=str(browser_file))
 
 
 def test_client_get_history():

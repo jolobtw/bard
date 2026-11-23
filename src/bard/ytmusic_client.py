@@ -13,8 +13,17 @@ import requests
 import yt_dlp
 from ytmusicapi import OAuthCredentials, YTMusic
 
+from bard.config import get_default_config_dir
 from bard.models import Track
 from bard.oauth import YTMusicOAuth
+
+_TV_EXCLUDED_PLAYLIST_IDS = {"LL", "WL", "LM"}
+_TV_EXCLUDED_PLAYLIST_TITLES = {"liked videos", "watch later"}
+
+
+def get_default_browser_auth_path() -> Path:
+    """Return ~/.config/bard/browser.json cross-platform path."""
+    return get_default_config_dir() / "browser.json"
 
 logger = logging.getLogger(__name__)
 
@@ -171,17 +180,30 @@ class YTMusicClient:
         auth_header: Optional[str] = None,
         oauth: Optional[YTMusicOAuth] = None,
         token_path: Optional[Union[Path, str]] = None,
+        browser_auth_path: Optional[Union[Path, str]] = None,
     ):
         self.auth_header = auth_header
         self._oauth = oauth
         self._authenticated = False
+        self._auth_mode: str = "anon"
         self._anon_instance: Optional[YTMusic] = None
         self.last_stream_error: Optional[str] = None
+
+        if self._oauth is None:
+            self._oauth = YTMusicOAuth(token_path=Path(token_path) if token_path else None)
+
+        if browser_auth_path is not None:
+            self._browser_auth_path = Path(browser_auth_path)
+        elif token_path is not None:
+            self._browser_auth_path = Path(token_path).parent / "browser.json"
+        else:
+            self._browser_auth_path = self._oauth.token_path.parent / "browser.json"
 
         if auth_header:
             try:
                 self._ytm = YTMusic(auth=auth_header)
                 self._authenticated = True
+                self._auth_mode = "header"
             except Exception as exc:
                 logger.warning(
                     "Failed to initialize YTMusic with auth_header: %s; falling back to unauthenticated",
@@ -189,31 +211,46 @@ class YTMusicClient:
                 )
                 self._ytm = YTMusic()
                 self._authenticated = False
+        elif self._browser_auth_path.exists():
+            try:
+                self._ytm = YTMusic(auth=str(self._browser_auth_path))
+                self._authenticated = True
+                self._auth_mode = "browser"
+            except Exception as exc:
+                logger.warning(
+                    "Failed to initialize YTMusic with browser auth (%s): %s; trying OAuth",
+                    self._browser_auth_path,
+                    exc,
+                )
+                self._init_oauth_client()
         else:
-            if self._oauth is None:
-                self._oauth = YTMusicOAuth(token_path=Path(token_path) if token_path else None)
+            self._init_oauth_client()
 
-            if self._oauth.is_authenticated():
-                try:
-                    oauth_creds = OAuthCredentials(
-                        client_id=str(self._oauth.client_id),
-                        client_secret=str(self._oauth.client_secret),
-                    )
-                    self._ytm = YTMusic(
-                        auth=str(self._oauth.token_path),
-                        oauth_credentials=oauth_creds,
-                    )
-                    self._authenticated = True
-                except Exception as exc:
-                    logger.warning(
-                        "Failed to initialize YTMusic with OAuth credentials: %s; falling back to unauthenticated",
-                        exc,
-                    )
-                    self._ytm = YTMusic()
-                    self._authenticated = False
-            else:
+    def _init_oauth_client(self) -> None:
+        if self._oauth and self._oauth.is_authenticated():
+            try:
+                oauth_creds = OAuthCredentials(
+                    client_id=str(self._oauth.client_id),
+                    client_secret=str(self._oauth.client_secret),
+                )
+                self._ytm = YTMusic(
+                    auth=str(self._oauth.token_path),
+                    oauth_credentials=oauth_creds,
+                )
+                self._authenticated = True
+                self._auth_mode = "oauth"
+            except Exception as exc:
+                logger.warning(
+                    "Failed to initialize YTMusic with OAuth credentials: %s; falling back to unauthenticated",
+                    exc,
+                )
                 self._ytm = YTMusic()
                 self._authenticated = False
+                self._auth_mode = "anon"
+        else:
+            self._ytm = YTMusic()
+            self._authenticated = False
+            self._auth_mode = "anon"
 
     @property
     def ytmusic(self) -> YTMusic:
@@ -404,9 +441,11 @@ class YTMusicClient:
             tr = it.get("tileRenderer", {})
             browse_id = tr.get("onSelectCommand", {}).get("browseEndpoint", {}).get("browseId", "")
             pl_id = browse_id.replace("VL", "") if browse_id.startswith("VL") else browse_id
-            if not pl_id or pl_id in seen_ids:
+            if not pl_id or pl_id in seen_ids or pl_id in _TV_EXCLUDED_PLAYLIST_IDS:
                 continue
             title = _extract_text(tr.get("metadata", {}).get("tileMetadataRenderer", {}).get("title")) or "Untitled Playlist"
+            if title.strip().lower() in _TV_EXCLUDED_PLAYLIST_TITLES:
+                continue
             header = tr.get("header", {}).get("tileHeaderRenderer", {})
             thumbs = header.get("thumbnail", {}).get("thumbnails", []) if isinstance(header, dict) else []
             thumb = thumbs[-1].get("url", "") if thumbs else ""

@@ -16,7 +16,7 @@ from bard.audio_player import AudioPlayer
 from bard.config import BardConfig
 from bard.oauth import YTMusicOAuth
 from bard.ui.app import BardApp
-from bard.ytmusic_client import YTMusicClient
+from bard.ytmusic_client import YTMusicClient, get_default_browser_auth_path
 
 console = Console()
 
@@ -96,11 +96,42 @@ def run_device_login(oauth: Optional[YTMusicOAuth] = None) -> bool:
         return False
 
 
+def run_browser_auth(browser_path: Optional[object] = None) -> bool:
+    """Configure YouTube Music browser header auth (for YTM-only playlists)."""
+    import ytmusicapi
+
+    target = browser_path if browser_path is not None else get_default_browser_auth_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    console.print(
+        Panel(
+            "[#A6ADC8]To connect YouTube Music directly (music-only playlists):\n\n"
+            "  1. Open [#FFD166 underline]https://music.youtube.com[/] while signed in\n"
+            "  2. Open DevTools (F12) -> Network -> click any [#FFD166]/browse[/] request\n"
+            "  3. Copy the raw Request Headers, paste below, then press [#FFD166]Ctrl+Z + Enter[/] (Win) or [#FFD166]Ctrl+D[/] (Mac)[/]",
+            border_style="#FF7A00",
+            title="✦ ❖ YOUTUBE MUSIC BROWSER AUTH ❖ ✦",
+        )
+    )
+    try:
+        ytmusicapi.setup(filepath=str(target))
+        console.print(f"[bold #00E5FF]✦ Saved YouTube Music browser auth to {target}[/]")
+        return True
+    except Exception as exc:
+        console.print(f"[bold red]Browser auth setup failed:[/] {exc}")
+        return False
+
+
 def run_device_logout(oauth: Optional[YTMusicOAuth] = None) -> bool:
-    """Clear stored OAuth tokens and reset to anonymous client mode."""
+    """Clear stored OAuth tokens and browser auth, resetting to anonymous client mode."""
     if oauth is None:
         oauth = YTMusicOAuth()
     oauth.clear_tokens()
+    browser_path = oauth.token_path.parent / "browser.json"
+    if browser_path.exists():
+        try:
+            browser_path.unlink()
+        except Exception:
+            pass
     console.print(
         Panel(
             "[#FF7A00]✦ Stored YouTube Music credentials cleared.[/]\n\n"
@@ -130,6 +161,11 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         help="Log in to YouTube Music via OAuth 2.0 device pairing",
     )
     parser.add_argument(
+        "--auth-browser",
+        action="store_true",
+        help="Configure YouTube Music browser headers (music-only playlists)",
+    )
+    parser.add_argument(
         "--logout",
         action="store_true",
         help="Log out and clear stored YouTube Music credentials",
@@ -139,6 +175,11 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
 
     if args.login:
         success = run_device_login()
+        sys.exit(0 if success else 1)
+        return
+
+    if args.auth_browser:
+        success = run_browser_auth()
         sys.exit(0 if success else 1)
         return
 
