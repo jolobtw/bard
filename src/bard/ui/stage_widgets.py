@@ -979,7 +979,7 @@ class ControlsPanel(Widget):
 
     #volume-box {{
         width: 100%;
-        height: 2;
+        height: 1;
         background: transparent;
         border: none;
         padding: 0;
@@ -989,13 +989,6 @@ class ControlsPanel(Widget):
     #volume-bar-row {{
         width: 100%;
         height: 1;
-    }}
-
-    #vol-pct {{
-        width: 100%;
-        height: 1;
-        content-align: center middle;
-        color: {TEXT_MUTED};
     }}
 
     #controls-spacer {{
@@ -1053,7 +1046,6 @@ class ControlsPanel(Widget):
             with Horizontal(id="volume-bar-row"):
                 yield _MuteLabel(on_mute=self.on_mute, id="vol-mute-btn")
                 yield VolumeBar(on_volume=self.on_volume, id="volume-control")
-            yield Static("100%", id="vol-pct")
         if not self.embedded:
             yield Static(id="controls-spacer")
         yield Static(id="controls-hint")
@@ -1101,25 +1093,25 @@ class ControlsPanel(Widget):
 
         t_row.styles.height = 1
         t_row.styles.margin = (0, 0, 0, 0) if self.embedded else (1, 0, 0, 0)
-        v_box.styles.height = 2
+        v_box.styles.height = 1
         v_box.styles.border = "none"
 
         if compact_v:
             if self.embedded:
-                self.styles.margin = (0, 0, 0, 0)
+                self.styles.margin = (1, 0, 0, 0)
                 try:
                     self.query_one("#controls-hint", Static).display = False
                 except Exception:
                     pass
-            v_box.styles.margin = (0, 0, 0, 0)
+            v_box.styles.margin = (1, 0, 0, 0)
         else:
             if self.embedded:
-                self.styles.margin = (1, 0, 0, 0)
+                self.styles.margin = (2, 0, 0, 0)
                 try:
                     self.query_one("#controls-hint", Static).display = True
                 except Exception:
                     pass
-            v_box.styles.margin = (1, 0, 0, 0)
+            v_box.styles.margin = (1, 0, 1, 0)
 
     def _render_buttons(self) -> None:
         if not self.is_mounted:
@@ -1197,19 +1189,17 @@ class ControlsPanel(Widget):
             clamped_vol = max(0, min(100, int(volume)))
             self.query_one("#volume-control", VolumeBar).set_volume(clamped_vol)
             self.query_one("#vol-mute-btn", _MuteLabel).set_muted(clamped_vol == 0)
-            self.query_one("#vol-pct", Static).update(f"{clamped_vol:02d}%", layout=False)
         except Exception:
             pass
 
     def set_volume(self, volume: int) -> None:
-        """Update volume slider and percentage readout."""
+        """Update volume slider."""
         if not self.is_mounted:
             return
         clamped = max(0, min(100, int(volume)))
         try:
             self.query_one("#volume-control", VolumeBar).set_volume(clamped)
             self.query_one("#vol-mute-btn", _MuteLabel).set_muted(clamped == 0)
-            self.query_one("#vol-pct", Static).update(f"{clamped:02d}%", layout=False)
         except Exception:
             pass
 

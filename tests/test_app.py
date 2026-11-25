@@ -876,19 +876,20 @@ def test_app_volume_updates_ui_when_no_track_loaded(tmp_path):
             await pilot.pause()
             assert app.stage_widget.playback_data is None
 
+            from bard.ui.stage_widgets import VolumeBar
             app.action_set_volume(42)
             await pilot.pause()
-            assert app.stage_widget.query_one("#vol-pct").render().plain.strip() == "42%"
+            assert app.stage_widget.query_one("#volume-control", VolumeBar).volume == 42
 
             player.get_volume.return_value = 42
             app.action_volume_up()
             await pilot.pause()
-            assert app.stage_widget.query_one("#vol-pct").render().plain.strip() == "47%"
+            assert app.stage_widget.query_one("#volume-control", VolumeBar).volume == 47
 
             player.get_volume.return_value = 47
             app.action_volume_down()
             await pilot.pause()
-            assert app.stage_widget.query_one("#vol-pct").render().plain.strip() == "42%"
+            assert app.stage_widget.query_one("#volume-control", VolumeBar).volume == 42
 
     asyncio.run(_run())
 

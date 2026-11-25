@@ -239,18 +239,18 @@ def test_controls_panel_non_focusable_buttons_volume_and_output_route():
             await pilot.pause()
             assert "󰐊" in btn_play.render().plain
 
-            # VolumeBar speaker icon on left (unmuted 󰕾, muted 󰖁), borderless container, pct centered below bar
+            # VolumeBar speaker icon on left (unmuted 󰕾, muted 󰖁), borderless container, no pct label, buffer above volume
             vol_box = panel.query_one("#volume-box")
             vol_bar = panel.query_one("#volume-control", VolumeBar)
-            vol_pct = panel.query_one("#vol-pct", Static)
             mute_btn = panel.query_one("#vol-mute-btn")
+            assert len(panel.query("#vol-pct")) == 0
             assert vol_box.styles.border_top[0] in ("", "none")
             assert len(panel.query("#vol-label")) == 0
             assert "M: MUTE" not in str(mute_btn.render())
             assert "󰕾" in mute_btn.render().plain
             assert mute_btn.region.y == vol_bar.region.y
             assert mute_btn.region.x < vol_bar.region.x
-            assert vol_pct.region.y == vol_bar.region.y + 1
+            assert vol_box.region.y >= panel.query_one("#transport-row").region.bottom + 1
 
             panel.set_volume(0)
             await pilot.pause()
